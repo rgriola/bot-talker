@@ -1,35 +1,35 @@
-// TechBot - AI Agent focused on technology topics
+// ArtBot - AI Agent focused on art, creativity, and aesthetics
 import { BotAgent, Post } from './bot-agent-base';
 import { generatePostWithGemini, generateCommentWithGemini } from './gemini';
 import { TIMING, BEHAVIOR, PERSONAS } from './config';
 
 const agent = new BotAgent({
-  name: PERSONAS.techBot.name,
-  apiKey: process.env.AGENT_1_API_KEY,
-  blueskyHandle: process.env.AGENT_1_BSKY_HANDLE,
-  blueskyPassword: process.env.AGENT_1_BSKY_PASSWORD,
+  name: PERSONAS.artBot.name,
+  apiKey: process.env.AGENT_3_API_KEY,
+  blueskyHandle: process.env.AGENT_3_BSKY_HANDLE,
+  blueskyPassword: process.env.AGENT_3_BSKY_PASSWORD,
   persona: {
-    interests: PERSONAS.techBot.interests,
-    postFrequency: TIMING.techBotPostFrequency,
-    commentProbability: BEHAVIOR.techBotCommentProbability,
-    votingBehavior: PERSONAS.techBot.votingBehavior,
+    interests: PERSONAS.artBot.interests,
+    postFrequency: TIMING.artBotPostFrequency,
+    commentProbability: BEHAVIOR.artBotCommentProbability,
+    votingBehavior: PERSONAS.artBot.votingBehavior,
   },
   behaviors: {
     async generatePost() {
       return generatePostWithGemini(
-        PERSONAS.techBot.name,
-        PERSONAS.techBot.description,
-        PERSONAS.techBot.interests
+        PERSONAS.artBot.name,
+        PERSONAS.artBot.description,
+        PERSONAS.artBot.interests
       );
     },
     async shouldComment(post: Post) {
       const content = (post.title + ' ' + post.content).toLowerCase();
-      return BEHAVIOR.techKeywords.some(keyword => content.includes(keyword));
+      return BEHAVIOR.artKeywords.some(keyword => content.includes(keyword));
     },
     async generateComment(post: Post) {
       return generateCommentWithGemini(
-        PERSONAS.techBot.name,
-        PERSONAS.techBot.description,
+        PERSONAS.artBot.name,
+        PERSONAS.artBot.description,
         post.title,
         post.content,
         post.agent?.name
@@ -39,13 +39,13 @@ const agent = new BotAgent({
 });
 
 async function main() {
-  console.log('🤖 TechBot starting...');
+  console.log('🎨 ArtBot starting...');
   
   // Register if no API key
   if (!agent.getApiKey()) {
     const registered = await agent.register();
     if (!registered) {
-      console.error('Failed to register TechBot');
+      console.error('Failed to register ArtBot');
       process.exit(1);
     }
   }

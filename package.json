@@ -11,13 +11,17 @@
     "reset": "tsx scripts/reset-test-environment.ts",
     "agent:tech": "tsx scripts/agent-simulator-1.ts",
     "agent:philo": "tsx scripts/agent-simulator-2.ts",
+    "agent:art": "tsx scripts/agent-simulator-3.ts",
+    "agent:science": "tsx scripts/agent-simulator-4.ts",
     "agents:all": "bash scripts/run-all-agents.sh"
   },
   "dependencies": {
     "@atproto/api": "^0.18.20",
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.19.2",
     "@vercel/postgres": "^0.10.0",
     "bcrypt": "^6.0.0",
+    "dotenv": "^17.2.3",
     "jsonwebtoken": "^9.0.3",
     "next": "16.1.6",
     "react": "19.2.3",

@@ -1,6 +1,9 @@
 // Bot Agent Base Class
 // Provides core functionality for AI agents to interact with the platform
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 interface AgentConfig {
   name: string;
   apiKey?: string;
@@ -29,6 +32,13 @@ interface Post {
   _count?: { comments: number; votes: number };
 }
 
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -41,11 +51,45 @@ export class BotAgent {
   private apiKey: string | null = null;
   private isRunning = false;
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private keyFilePath: string;
 
   constructor(config: AgentConfig) {
     this.config = config;
     this.baseUrl = process.env.API_BASE_URL || 'http://localhost:3000/api/v1';
-    this.apiKey = config.apiKey || null;
+    
+    // Set up API key file path
+    const keysDir = path.join(process.cwd(), '.agent-keys');
+    if (!fs.existsSync(keysDir)) {
+      fs.mkdirSync(keysDir, { recursive: true });
+    }
+    this.keyFilePath = path.join(keysDir, `${config.name.toLowerCase().replace(/\s+/g, '-')}.key`);
+    
+    // Load API key: from config, from file, or null
+    this.apiKey = config.apiKey || this.loadApiKey() || null;
+  }
+
+  private loadApiKey(): string | null {
+    try {
+      if (fs.existsSync(this.keyFilePath)) {
+        const key = fs.readFileSync(this.keyFilePath, 'utf-8').trim();
+        if (key) {
+          this.log('🔑', `Loaded saved API key from ${this.keyFilePath}`);
+          return key;
+        }
+      }
+    } catch (error) {
+      this.log('⚠️', `Failed to load API key: ${error}`);
+    }
+    return null;
+  }
+
+  private saveApiKey(key: string): void {
+    try {
+      fs.writeFileSync(this.keyFilePath, key, 'utf-8');
+      this.log('💾', `Saved API key to ${this.keyFilePath}`);
+    } catch (error) {
+      this.log('⚠️', `Failed to save API key: ${error}`);
+    }
   }
 
   private log(emoji: string, message: string) {
@@ -92,7 +136,7 @@ export class BotAgent {
 
   async register(): Promise<boolean> {
     this.log('📝', 'Registering agent...');
-    const response = await this.request<{ apiKey: string; claimToken: string }>(
+    const response = await this.request<{ apiKey: string; claimToken: string; isExisting?: boolean }>(
       '/agents/register',
       {
         method: 'POST',
@@ -102,7 +146,9 @@ export class BotAgent {
 
     if (response.success && response.data) {
       this.apiKey = response.data.apiKey;
-      this.log('✅', `Registered successfully! API Key: ${this.apiKey.substring(0, 20)}...`);
+      this.saveApiKey(this.apiKey); // Save the key to file for persistence
+      const status = response.data.isExisting ? 'reconnected to existing agent' : 'registered new agent';
+      this.log('✅', `Success (${status})! API Key: ${this.apiKey.substring(0, 20)}...`);
       return true;
     }
 
@@ -139,7 +185,7 @@ export class BotAgent {
 
   async fetchFeed(): Promise<Post[]> {
     this.log('🔄', 'Fetching feed...');
-    const response = await this.request<{ posts: Post[]; pagination: any }>('/posts');
+    const response = await this.request<{ posts: Post[]; pagination: Pagination }>('/posts');
 
     if (response.success && response.data?.posts) {
       this.log('📰', `Fetched ${response.data.posts.length} posts`);
@@ -243,7 +289,12 @@ export class BotAgent {
           const shouldComment = await this.config.behaviors.shouldComment(post);
           if (shouldComment) {
             const comment = await this.config.behaviors.generateComment(post);
-            await this.createComment(post.id, comment);
+            // Skip posting fallback/error content
+            if (comment.includes('⚠️ FALLBACK')) {
+              this.log('⏭️', `Skipping comment - API error (not posting fallback content)`);
+            } else {
+              await this.createComment(post.id, comment);
+            }
             await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit
           }
         }
@@ -259,7 +310,12 @@ export class BotAgent {
       // Maybe create a post
       if (Math.random() < 0.3) {
         const { title, content } = await this.config.behaviors.generatePost();
-        await this.createPost(title, content);
+        // Skip posting fallback/error content
+        if (title.includes('⚠️ FALLBACK') || content.includes('⚠️ FALLBACK')) {
+          this.log('⏭️', `Skipping post - API error (not posting fallback content)`);
+        } else {
+          await this.createPost(title, content);
+        }
       }
 
       this.log('💓', 'Heartbeat complete');

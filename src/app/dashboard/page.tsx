@@ -44,6 +44,91 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [expandedPosts, setExpandedPosts] = useState<Set<string>>(new Set())
+  const [loadingComments, setLoadingComments] = useState<Set<string>>(new Set())
+
+  const fetchComments = async (postId: string) => {
+    setLoadingComments(prev => new Set(prev).add(postId))
+    try {
+      const res = await fetch(`/api/v1/comments?postId=${postId}`)
+      if (!res.ok) throw new Error('Failed to fetch comments')
+      const data = await res.json()
+      const comments = data.data?.comments || data.comments || []
+      
+      // Update the post with fetched comments
+      setPosts(prevPosts => 
+        prevPosts.map(post => 
+          post.id === postId ? { ...post, comments } : post
+        )
+      )
+    } catch (err) {
+      console.error('Failed to fetch comments:', err)
+    } finally {
+      setLoadingComments(prev => {
+        const next = new Set(prev)
+        next.delete(postId)
+        return next
+      })
+    }
+  }
+
+  const toggleComments = async (postId: string) => {
+    const isExpanded = expandedPosts.has(postId)
+    
+    if (isExpanded) {
+      // Collapse
+      setExpandedPosts(prev => {
+        const next = new Set(prev)
+        next.delete(postId)
+        return next
+      })
+    } else {
+      // Expand and fetch comments if not already loaded
+      setExpandedPosts(prev => new Set(prev).add(postId))
+      const post = posts.find(p => p.id === postId)
+      if (post && (!post.comments || post.comments.length === 0) && post._count.comments > 0) {
+        await fetchComments(postId)
+      }
+    }
+  }
+
+  // Full refresh - loads posts from last hour with all comments
+  const handleManualRefresh = async () => {
+    setLoading(true)
+    setPosts([])
+    setExpandedPosts(new Set())
+    
+    try {
+      // Fetch posts from last hour with comments included
+      const postsRes = await fetch('/api/v1/posts?limit=100&since=60&includeComments=true')
+      if (!postsRes.ok) throw new Error('Failed to fetch posts')
+      const postsData = await postsRes.json()
+      const newPosts = postsData.data?.posts || postsData.posts || []
+      
+      setPosts(newPosts)
+      
+      // Auto-expand all posts that have comments
+      const postsWithComments = new Set<string>(
+        newPosts
+          .filter((p: Post) => p._count?.comments > 0)
+          .map((p: Post) => p.id)
+      )
+      setExpandedPosts(postsWithComments)
+
+      // Fetch stats
+      const statsRes = await fetch('/api/v1/stats')
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setStats(statsData)
+      }
+
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const fetchData = async () => {
     try {
@@ -51,8 +136,19 @@ export default function Dashboard() {
       const postsRes = await fetch('/api/v1/posts?limit=50')
       if (!postsRes.ok) throw new Error('Failed to fetch posts')
       const postsData = await postsRes.json()
-      // API returns { success: true, data: { posts: [...] } }
-      setPosts(postsData.data?.posts || postsData.posts || [])
+      const newPosts = postsData.data?.posts || postsData.posts || []
+      
+      // Update posts state
+      setPosts(newPosts)
+
+      // Refresh comments for any expanded posts
+      for (const postId of Array.from(expandedPosts)) {
+        const post = newPosts.find((p: Post) => p.id === postId)
+        if (post && post._count?.comments > 0) {
+          // Fetch fresh comments for expanded posts (don't await, let them load in parallel)
+          fetchComments(postId)
+        }
+      }
 
       // Fetch stats
       const statsRes = await fetch('/api/v1/stats')
@@ -81,7 +177,7 @@ export default function Dashboard() {
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [autoRefresh])
+  }, [autoRefresh, expandedPosts])
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -107,10 +203,11 @@ export default function Dashboard() {
               Auto-refresh
             </label>
             <button
-              onClick={fetchData}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              onClick={handleManualRefresh}
+              disabled={loading}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-800 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              🔄 Refresh
+              {loading ? '⏳ Loading...' : '🔄 Refresh'}
             </button>
           </div>
         </div>
@@ -196,13 +293,26 @@ export default function Dashboard() {
                 <span className={post.score > 0 ? 'text-green-400' : post.score < 0 ? 'text-red-400' : ''}>
                   ⬆️ {post.score} votes
                 </span>
-                <span>💬 {post._count?.comments || 0} comments</span>
+                <button
+                  onClick={() => toggleComments(post.id)}
+                  className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
+                  disabled={loadingComments.has(post.id)}
+                >
+                  <span>{expandedPosts.has(post.id) ? '🔽' : '💬'}</span>
+                  <span>{post._count?.comments || 0} comments</span>
+                  {loadingComments.has(post.id) && (
+                    <span className="animate-spin">⏳</span>
+                  )}
+                </button>
               </div>
 
-              {/* Comments */}
-              {post.comments && post.comments.length > 0 && (
+              {/* Comments (Collapsible) */}
+              {expandedPosts.has(post.id) && (
                 <div className="mt-4 pl-4 border-l-2 border-purple-500/30 space-y-4">
-                  {post.comments.map((comment) => (
+                  {(!post.comments || post.comments.length === 0) && !loadingComments.has(post.id) && (
+                    <div className="text-purple-300 text-sm italic">No comments yet</div>
+                  )}
+                  {post.comments && post.comments.map((comment) => (
                     <div key={comment.id} className="bg-white/5 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">

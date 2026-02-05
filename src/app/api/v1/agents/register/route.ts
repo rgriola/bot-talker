@@ -6,7 +6,7 @@ import crypto from 'crypto'
 
 /**
  * POST /api/v1/agents/register
- * Register a new AI agent and receive an API key
+ * Register a new AI agent or return existing agent with that name
  */
 export async function POST(request: NextRequest) {
   try {
@@ -28,22 +28,57 @@ export async function POST(request: NextRequest) {
       return errorResponse('Name must be 50 characters or less')
     }
 
-    // Generate unique API key: agentnet_ + 32 random chars
-    const apiKeyPrefix = process.env.API_KEY_PREFIX || 'agentnet_'
-    const randomPart = crypto.randomBytes(24).toString('base64url') // ~32 chars
-    const apiKey = `${apiKeyPrefix}${randomPart}`
+    // Check if agent with this name already exists
+    const existingAgent = await prisma.agent.findFirst({
+      where: { name: name.trim() },
+      orderBy: { createdAt: 'desc' }, // Get the most recent one
+    })
 
-    // Hash the API key for storage
+    // Generate new API key for both new and existing agents
+    const apiKeyPrefix = process.env.API_KEY_PREFIX || 'agentnet_'
+    const randomPart = crypto.randomBytes(24).toString('base64url')
+    const apiKey = `${apiKeyPrefix}${randomPart}`
     const apiKeyHash = await bcrypt.hash(apiKey, 10)
 
-    // Generate claim token (UUID)
+    if (existingAgent) {
+      // Update existing agent with new API key
+      const updatedAgent = await prisma.agent.update({
+        where: { id: existingAgent.id },
+        data: {
+          apiKey: apiKey.slice(0, 20) + '...',
+          apiKeyHash,
+        },
+        select: {
+          id: true,
+          name: true,
+          claimToken: true,
+          createdAt: true,
+        }
+      })
+
+      const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+      const claimUrl = `${baseUrl}/claim/${updatedAgent.claimToken}`
+
+      return successResponse({
+        message: 'Existing agent found. New API key generated - save it, it will only be shown once!',
+        apiKey,
+        agentId: updatedAgent.id,
+        name: updatedAgent.name,
+        claimToken: updatedAgent.claimToken,
+        claimUrl,
+        createdAt: updatedAgent.createdAt,
+        isExisting: true,
+      })
+    }
+
+    // Generate claim token for new agent
     const claimToken = crypto.randomUUID()
 
-    // Create the agent
+    // Create new agent
     const agent = await prisma.agent.create({
       data: {
         name: name.trim(),
-        apiKey: apiKey.slice(0, 20) + '...', // Store truncated for reference (not for auth)
+        apiKey: apiKey.slice(0, 20) + '...',
         apiKeyHash,
         claimToken,
         claimed: false,
@@ -61,12 +96,13 @@ export async function POST(request: NextRequest) {
 
     return successResponse({
       message: 'Agent registered successfully. Save your API key - it will only be shown once!',
-      apiKey, // Only time the full key is returned
+      apiKey,
       agentId: agent.id,
       name: agent.name,
       claimToken: agent.claimToken,
       claimUrl,
       createdAt: agent.createdAt,
+      isExisting: false,
     })
 
   } catch (error) {

@@ -12,8 +12,21 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
     const offset = parseInt(searchParams.get('offset') || '0')
     const submoltId = searchParams.get('submolt')
+    const since = searchParams.get('since') // ISO date string or minutes (e.g., '60' for last hour)
+    const includeComments = searchParams.get('includeComments') === 'true'
 
-    const where = submoltId ? { submoltId } : {}
+    // Build where clause
+    const where: Record<string, unknown> = {}
+    if (submoltId) {
+      where.submoltId = submoltId
+    }
+    if (since) {
+      // If it's a number, treat as minutes ago
+      const sinceDate = /^\d+$/.test(since)
+        ? new Date(Date.now() - parseInt(since) * 60 * 1000)
+        : new Date(since)
+      where.createdAt = { gte: sinceDate }
+    }
 
     const [posts, total] = await Promise.all([
       prisma.post.findMany({
@@ -38,7 +51,23 @@ export async function GET(request: NextRequest) {
             select: {
               value: true,
             }
-          }
+          },
+          // Optionally include comments with agent info
+          ...(includeComments && {
+            comments: {
+              include: {
+                agent: {
+                  select: {
+                    id: true,
+                    name: true,
+                    blueskyHandle: true,
+                    verifiedAt: true,
+                  }
+                }
+              },
+              orderBy: { createdAt: 'asc' as const }
+            }
+          })
         },
         orderBy: { createdAt: 'desc' },
         take: limit,
