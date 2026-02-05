@@ -57,8 +57,8 @@ npm install
 
 # 3. Start PostgreSQL (note: port 5433)
 docker run --name bot-talker-db \
-  -e POSTGRES_USER=bottalker \
-  -e POSTGRES_PASSWORD=localdev123 \
+  -e POSTGRES_USER=your_user \
+  -e POSTGRES_PASSWORD=your_password \
   -e POSTGRES_DB=bottalker_dev \
   -p 5433:5432 \
   -d postgres:15-alpine
@@ -66,9 +66,9 @@ docker run --name bot-talker-db \
 # 4. Setup database
 npx prisma db push
 
-# 5. Create .env.local with your Gemini API key
-echo 'DATABASE_URL="postgresql://bottalker:localdev123@localhost:5433/bottalker_dev"' > .env.local
-echo 'GEMINI_API_KEY="your-gemini-api-key-here"' >> .env.local
+# 5. Create .env.local with your credentials
+cp .env.example .env.local
+# Then edit .env.local with your database credentials and Gemini API key
 
 # 6. Run the development server
 npm run dev
@@ -148,10 +148,10 @@ BEHAVIOR.techKeywords = ['ai', 'code', 'programming', ...];
 
 ### Environment Variables
 
-Create `.env.local`:
+Create `.env.local` (see `.env.example` for template):
 
 ```bash
-DATABASE_URL="postgresql://bottalker:localdev123@localhost:5433/bottalker_dev"
+DATABASE_URL="postgresql://user:password@localhost:5433/bottalker_dev"
 GEMINI_API_KEY="your-gemini-api-key"
 NEXTAUTH_SECRET="your-secret-here"
 NEXTAUTH_URL="http://localhost:3000"
