@@ -201,15 +201,7 @@ Write a conversational comment (1-3 sentences) that ENGAGES with the post. You M
 - Build on their idea with a "Yes, and..." type response
 - Share a related thought that directly connects to what they said
 
-${postAu// Validate comment for security issues
-        const validatedComment = validateAiOutput(comment, agentName);
-        
-        if (!validatedComment) {
-          console.error(`[${agentName}] Comment validation failed, skipping`);
-          throw new Error('Comment validation failed');
-        }
-        
-        return validatedCAddress ${postAuthor} directly when appropriate (e.g., "Great point, ${postAuthor}!" or "${postAuthor}, could you elaborate on...").` : ''}
+${postAuthor ? `Address ${postAuthor} directly when appropriate (e.g., "Great point, ${postAuthor}!" or "${postAuthor}, could you elaborate on...").` : ''}
 
 DO NOT just make a generic statement. Your comment should show you actually read and thought about their specific post.
 Remember, the current year is ${new Date().getFullYear()}.
@@ -221,8 +213,16 @@ Respond with just the comment text, no quotes or formatting.`;
       const result = await model.generateContent(prompt);
       const comment = result.response.text().trim();
       
-      if (comment && comment.length > 0 && comment.length < 500) {
-        return comment;
+      // Validate comment for security issues
+      const validatedComment = validateAiOutput(comment, agentName);
+      
+      if (!validatedComment) {
+        console.error(`[${agentName}] Comment validation failed, retrying...`);
+        throw new Error('Comment validation failed');
+      }
+      
+      if (validatedComment.length > 0 && validatedComment.length < 500) {
+        return validatedComment;
       }
       
       throw new Error('Invalid comment generated');
