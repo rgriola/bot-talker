@@ -4,6 +4,14 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { PrismaClient } from '@prisma/client';
+import { 
+  PhysicalNeeds, 
+  initializeNeeds, 
+  decayNeeds, 
+  fulfillNeed, 
+  getMostUrgentNeed,
+  NEED_THRESHOLDS 
+} from './bot-needs';
 
 const prisma = new PrismaClient();
 const PORT = 8080;
@@ -21,24 +29,32 @@ interface BotState {
   targetX: number;
   targetY: number;
   targetZ: number;
-  state: 'idle' | 'wandering' | 'approaching' | 'speaking';
+  state: 'idle' | 'wandering' | 'approaching' | 'speaking' | 'seeking-water' | 'drinking';
   lastPostTitle?: string;
   // Random appearance
   width: number;   // 0.5 – 0.8 meters
   height: number;  // 0.66 – 1.3 meters
   color: string;   // hex color from 256-color palette
+  // Physical needs (only for bots with needs enabled)
+  needs?: PhysicalNeeds;
+  lastNeedUpdate?: Date;
 }
 
 interface WorldConfig {
   groundRadius: number;  // half-size of the ground plane
   botCount: number;
+  waterSpots: Array<{ x: number; z: number; radius: number }>; // Water sources
 }
 
 // ─── World State ─────────────────────────────────────────────────
 
 const bots = new Map<string, BotState>();
 const clients = new Set<WebSocket>();
-let worldConfig: WorldConfig = { groundRadius: 15, botCount: 0 };
+let worldConfig: WorldConfig = { 
+  groundRadius: 15, 
+  botCount: 0,
+  waterSpots: [] // Initialize empty, will add water spot during init
+};
 let lastPollTime = new Date();
 
 // ─── Bot Movement Constants ──────────────────────────────────────
@@ -124,6 +140,14 @@ async function initializeBots() {
         };
         bot.targetX = bot.x;
         bot.targetZ = bot.z;
+        
+        // Enable needs for ScienceBot (Phase 1: Water only)
+        if (d.name === 'ScienceBot') {
+          bot.needs = initializeNeeds();
+          bot.lastNeedUpdate = new Date();
+          console.log(`   💧 ${d.name} needs system enabled (starting water: ${bot.needs.water})`);
+        }
+        
         bots.set(bot.botId, bot);
       }
     } else {
@@ -146,6 +170,14 @@ async function initializeBots() {
         };
         bot.targetX = bot.x;
         bot.targetZ = bot.z;
+        
+        // Enable needs for ScienceBot (Phase 1: Water only)
+        if (agent.name.toLowerCase().includes('science')) {
+          bot.needs = initializeNeeds();
+          bot.lastNeedUpdate = new Date();
+          console.log(`   💧 ${agent.name} needs system enabled (starting water: ${bot.needs.water})`);
+        }
+        
         bots.set(bot.botId, bot);
       }
     }
@@ -159,7 +191,15 @@ async function initializeBots() {
     );
     worldConfig.groundRadius = Math.round(groundSide / 2);
 
+    // Create water spot (lake) - place it off to one side
+    const waterX = worldConfig.groundRadius * 0.6; // 60% to the right
+    const waterZ = worldConfig.groundRadius * 0.3; // 30% forward
+    worldConfig.waterSpots = [
+      { x: waterX, z: waterZ, radius: 3 } // 3-meter radius lake
+    ];
+
     console.log(`✅ Loaded ${bots.size} bots into simulation (ground: ${groundSide.toFixed(0)}×${groundSide.toFixed(0)}m)`);
+    console.log(`   💧 Water spot at (${waterX.toFixed(1)}, ${waterZ.toFixed(1)}) radius: 3m`);
     for (const bot of bots.values()) {
       console.log(`   🤖 ${bot.botName} (${bot.personality}) ${bot.color} ${bot.width.toFixed(2)}×${bot.height.toFixed(2)}m at (${bot.x.toFixed(1)}, ${bot.z.toFixed(1)})`);
     }
@@ -197,6 +237,60 @@ async function initializeBots() {
 // ─── Autonomous Movement Simulation ─────────────────────────────
 
 function simulateMovement() {
+  // ─── Update Physical Needs ─────────────────────────────────
+  const now = new Date();
+  for (const bot of bots.values()) {
+    if (!bot.needs || !bot.lastNeedUpdate) continue;
+    
+    // Calculate elapsed time in minutes
+    const elapsedMs = now.getTime() - bot.lastNeedUpdate.getTime();
+    const elapsedMinutes = elapsedMs / (1000 * 60);
+    
+    // Decay needs
+    if (elapsedMinutes > 0.01) { // Update if at least ~0.6 seconds passed
+      bot.needs = decayNeeds(bot.needs, elapsedMinutes);
+      bot.lastNeedUpdate = now;
+      
+      // Check if bot needs water
+      const urgentNeed = getMostUrgentNeed(bot.needs);
+      
+      if (urgentNeed.need === 'water' && bot.state !== 'drinking') {
+        // Bot needs water! Find nearest water spot
+        const nearestWater = worldConfig.waterSpots[0]; // For now just use first water spot
+        if (nearestWater) {
+          bot.targetX = nearestWater.x;
+          bot.targetZ = nearestWater.z;
+          bot.state = 'seeking-water';
+          console.log(`💧 ${bot.botName} is thirsty (water: ${bot.needs.water.toFixed(1)}) - seeking water at (${nearestWater.x.toFixed(1)}, ${nearestWater.z.toFixed(1)})`);
+        }
+      }
+      
+      // Check if bot reached water
+      if (bot.state === 'seeking-water' && worldConfig.waterSpots.length > 0) {
+        const water = worldConfig.waterSpots[0];
+        const distToWater = Math.sqrt(
+          Math.pow(bot.x - water.x, 2) + Math.pow(bot.z - water.z, 2)
+        );
+        
+        if (distToWater < water.radius) {
+          // Bot is at water! Start drinking
+          bot.state = 'drinking';
+          bot.needs = fulfillNeed(bot.needs, 'water', 100);
+          console.log(`🍶 ${bot.botName} is drinking! Water restored to ${bot.needs.water.toFixed(1)}`);
+          
+          // Drink for a moment then return to wandering
+          setTimeout(() => {
+            if (bot.state === 'drinking') {
+              bot.state = 'idle';
+              console.log(`✅ ${bot.botName} finished drinking, back to normal activity`);
+            }
+          }, 3000); // Drink for 3 seconds
+        }
+      }
+    }
+  }
+  
+  // ─── Bot Movement Logic ────────────────────────────────────
   for (const bot of bots.values()) {
     // Move toward target
     const dx = bot.targetX - bot.x;
@@ -364,6 +458,7 @@ function broadcastBotPositions() {
     width: b.width,
     height: b.height,
     color: b.color,
+    needs: b.needs,
   }));
 
   broadcast({
@@ -385,6 +480,7 @@ function sendWorldInit(ws: WebSocket) {
     width: b.width,
     height: b.height,
     color: b.color,
+    needs: b.needs,
   }));
 
   ws.send(JSON.stringify({

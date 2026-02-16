@@ -384,14 +384,20 @@ Respond with just the reply text, no quotes or formatting.`;
 
       const validatedReply = validateAiOutput(reply, agentName);
       if (!validatedReply) {
-        throw new Error('Reply validation failed');
+        throw new Error('Reply validation failed (sensitive/injection content)');
       }
 
-      if (validatedReply.length > 0 && validatedReply.length < 500) {
-        return validatedReply;
+      if (validatedReply.length === 0) {
+        throw new Error(`Empty reply generated (raw: "${reply.slice(0, 50)}")`);
       }
 
-      throw new Error('Invalid reply generated');
+      // Truncate if too long, but use the reply rather than failing
+      if (validatedReply.length >= 500) {
+        console.warn(`[${agentName}] Reply too long (${validatedReply.length} chars), truncating to 497`);
+        return validatedReply.slice(0, 494) + '...';
+      }
+
+      return validatedReply;
     } catch (error) {
       const errorStr = String(error);
       const isRateLimit = errorStr.includes('429') || errorStr.includes('quota');

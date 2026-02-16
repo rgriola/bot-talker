@@ -1,204 +1,43 @@
+/**
+ * 3D simulation page with bot visualization and real-time WebSocket updates.
+ * Refactored: 2026-02-16 @ modularization into components and utilities
+ */
+
 'use client';
 
-import { useEffect, useRef, useCallback, useState, useMemo, ReactNode } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-// Weather types (inline to avoid Next.js server/client import issues)
-interface AirQualityData {
-  us_aqi: number;
-  european_aqi: number;
-  pm10: number;
-  pm2_5: number;
-  carbon_monoxide: number;
-  nitrogen_dioxide: number;
-  sulphur_dioxide: number;
-  ozone: number;
-  quality_label: string;
-}
+// Types
+import type {
+  AirQualityData,
+  WeatherData,
+  BotData,
+  BotEntity,
+  ActivityMessage,
+  SelectedBotInfo,
+  PostDetail,
+  UiTheme,
+} from '@/types/simulation';
 
-interface WeatherData {
-  temperature: number;
-  feelsLike: number;
-  condition: string;
-  weatherCode: number;
-  cloudCover: number;
-  precipitation: number;
-  humidity: number;
-  windSpeed: number;
-  isDay: boolean;
-  isRaining: boolean;
-  isSnowing: boolean;
-  isCloudy: boolean;
-  isFoggy: boolean;
-  isStormy: boolean;
-  airQuality?: AirQualityData;
-}
+// Utilities
+import { rgbToHex, ensureContrastRatio } from '@/utils/color';
+import { getWeatherEmoji, getAQIColor, WEATHER_CONDITIONS, isRainCode, isSnowCode, isFogCode, isStormCode } from '@/utils/weather';
+import { calculateSunPosition } from '@/utils/solar';
 
-// ─── Content Renderer (handles markdown-style links and citations) ───
+// Config
+import { BOT_VISUALS, getBotColor } from '@/config/bot-visuals';
 
-function renderContentWithLinks(content: string): ReactNode[] {
-  const elements: ReactNode[] = [];
-  let key = 0;
-  
-  // Pattern to match: ***text*** for bold italic, and [text](url) for links
-  const combinedPattern = /(\*{3}[^*]+\*{3})|(\[[^\]]+\]\([^)]+\))/g;
-  
-  let lastIndex = 0;
-  let match;
-  
-  while ((match = combinedPattern.exec(content)) !== null) {
-    // Add text before match
-    if (match.index > lastIndex) {
-      elements.push(<span key={key++}>{content.slice(lastIndex, match.index)}</span>);
-    }
-    
-    const matched = match[0];
-    
-    if (matched.startsWith('***') && matched.endsWith('***')) {
-      // Bold italic: ***text***
-      const innerText = matched.slice(3, -3);
-      elements.push(
-        <strong key={key++} style={{ fontStyle: 'italic', color: '#4a9eff' }}>
-          {innerText}
-        </strong>
-      );
-    } else if (matched.startsWith('[')) {
-      // Link: [text](url)
-      const linkMatch = matched.match(/\[([^\]]+)\]\(([^)]+)\)/);
-      if (linkMatch) {
-        const [, linkText, url] = linkMatch;
-        elements.push(
-          <a
-            key={key++}
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              color: '#60a5fa',
-              textDecoration: 'underline',
-              textDecorationStyle: 'dotted',
-              cursor: 'pointer',
-            }}
-          >
-            {linkText}
-          </a>
-        );
-      }
-    }
-    
-    lastIndex = match.index + matched.length;
-  }
-  
-  // Add remaining text
-  if (lastIndex < content.length) {
-    elements.push(<span key={key++}>{content.slice(lastIndex)}</span>);
-  }
-  
-  return elements.length > 0 ? elements : [<span key={0}>{content}</span>];
-}
-
-// ─── Types ───────────────────────────────────────────────────────
-
-interface BotData {
-  botId: string;
-  botName: string;
-  personality: string;
-  x: number;
-  y: number;
-  z: number;
-  state: string;
-  lastPostTitle?: string;
-  width?: number;   // 0.5–0.8m (from bridge)
-  height?: number;  // 0.66–1.3m (from bridge)
-  color?: string;   // hex color (from bridge)
-}
-
-interface BotEntity {
-  group: THREE.Group;
-  mesh: THREE.Mesh;
-  label: HTMLDivElement;
-  speechBubble: HTMLDivElement;
-  targetPos: THREE.Vector3;
-  data: BotData;
-  postCount: number;       // Track number of posts
-  recentPost?: ActivityMessage;  // Most recent post for click display
-}
-
-interface ActivityMessage {
-  id: string;
-  postId?: string;
-  botName: string;
-  botColor: string;
-  text: string;
-  content: string;
-  time: string;
-}
-
-interface PostComment {
-  id: string;
-  content: string;
-  createdAt: string;
-  agent: { name: string };
-}
-
-interface PostDetail {
-  comments: PostComment[];
-  score: number;
-  upvotes: number;
-  downvotes: number;
-  commentCount: number;
-}
-
-interface SelectedBotInfo {
-  botId: string;
-  botName: string;
-  personality: string;
-  postCount: number;
-  color: string;
-  state: string;
-  height?: number;
-  lastPostTime?: string;
-}
-
-// ─── Personality → Visual Config ─────────────────────────────────
-
-const BOT_VISUALS: Record<string, {
-  color: number;
-  emissive: number;
-  geometry: () => THREE.BufferGeometry;
-  emoji: string;
-  label: string;
-}> = {
-  tech: {
-    color: 0x4a9eff,
-    emissive: 0x1a3a66,
-    geometry: () => new THREE.BoxGeometry(0.8, 0.8, 0.8),
-    emoji: '🤖',
-    label: 'Tech',
-  },
-  philo: {
-    color: 0xb366ff,
-    emissive: 0x3d1a66,
-    geometry: () => new THREE.SphereGeometry(0.5, 32, 32),
-    emoji: '🧠',
-    label: 'Philosophy',
-  },
-  art: {
-    color: 0xff8c42,
-    emissive: 0x663a1a,
-    geometry: () => new THREE.ConeGeometry(0.5, 1, 6),
-    emoji: '🎨',
-    label: 'Art',
-  },
-  science: {
-    color: 0x42d68c,
-    emissive: 0x1a663a,
-    geometry: () => new THREE.CylinderGeometry(0.4, 0.4, 1, 16),
-    emoji: '🔬',
-    label: 'Science',
-  },
-};
+// Components
+import {
+  StatusBar,
+  ActivityFeedPanel,
+  PostDetailPanel,
+  BotMetricsPanel,
+  AirQualityPanel,
+  PhysicalNeedsPanel,
+} from '@/components/simulation';
 
 export default function SimulationPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -231,9 +70,12 @@ export default function SimulationPage() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [showAirQuality, setShowAirQuality] = useState(false);
+  const [showPhysicalNeeds, setShowPhysicalNeeds] = useState(false);
   // Particle system refs for weather effects
   const rainParticlesRef = useRef<THREE.Points | null>(null);
   const cloudParticlesRef = useRef<THREE.Points | null>(null);
+  // Water spots for bot survival needs
+  const waterSpotsRef = useRef<THREE.Mesh[]>([]);
 
   // ─── Clock & Location ────────────────────────────────────────
   useEffect(() => {
@@ -344,28 +186,6 @@ export default function SimulationPage() {
     return () => clearInterval(interval);
   }, [location]);
 
-  // ─── Weather Helper: Get Emoji ────────────────────────────
-  const getWeatherEmoji = useCallback((w: WeatherData): string => {
-    if (w.isStormy) return '⛈️';
-    if (w.isSnowing) return '🌨️';
-    if (w.isRaining) return '🌧️';
-    if (w.isFoggy) return '🌫️';
-    if (!w.isDay) return w.isCloudy ? '☁️' : '🌙';
-    if (w.cloudCover > 80) return '☁️';
-    if (w.cloudCover > 40) return '⛅';
-    return '☀️';
-  }, []);
-
-  // ─── Air Quality Helper: Get AQI Color ────────────────────────
-  const getAQIColor = useCallback((aqi: number): string => {
-    if (aqi <= 50) return '#00e400';      // Green - Good
-    if (aqi <= 100) return '#ffff00';     // Yellow - Moderate
-    if (aqi <= 150) return '#ff7e00';     // Orange - Unhealthy for Sensitive
-    if (aqi <= 200) return '#ff0000';     // Red - Unhealthy
-    if (aqi <= 300) return '#8f3f97';     // Purple - Very Unhealthy
-    return '#7e0023';                      // Maroon - Hazardous
-  }, []);
-
   // ─── Update Weather Visual Effects ────────────────────────
   useEffect(() => {
     const rain = rainParticlesRef.current;
@@ -396,32 +216,6 @@ export default function SimulationPage() {
       }
     }
   }, [weather]);
-
-  // ─── Sun Position Calculator ────────────────────────────────
-  const calculateSunPosition = useCallback((date: Date, lat: number, lng: number) => {
-    // Simplified solar position algorithm
-    const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
-    const hours = date.getHours() + date.getMinutes() / 60 + date.getTimezoneOffset() / 60 + lng / 15;
-    const solarTime = hours + (4 * lng + 229.18) / 60;
-    const hourAngle = (solarTime - 12) * 15 * Math.PI / 180;
-    
-    // Declination angle
-    const declination = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180) * Math.PI / 180;
-    const latRad = lat * Math.PI / 180;
-    
-    // Solar altitude (elevation above horizon)
-    const sinAltitude = Math.sin(latRad) * Math.sin(declination) + 
-                        Math.cos(latRad) * Math.cos(declination) * Math.cos(hourAngle);
-    const altitude = Math.asin(Math.max(-1, Math.min(1, sinAltitude)));
-    
-    // Solar azimuth
-    const cosAzimuth = (Math.sin(declination) - Math.sin(latRad) * sinAltitude) / 
-                       (Math.cos(latRad) * Math.cos(altitude));
-    let azimuth = Math.acos(Math.max(-1, Math.min(1, cosAzimuth)));
-    if (hourAngle > 0) azimuth = 2 * Math.PI - azimuth;
-    
-    return { altitude, azimuth };
-  }, []);
 
   // ─── Dynamic Lighting Update ────────────────────────────────
   useEffect(() => {
@@ -498,7 +292,7 @@ export default function SimulationPage() {
     
     // Update shadow camera position to follow sun/moon
     sunLight.shadow.camera.updateProjectionMatrix();
-  }, [currentTime, location, calculateSunPosition]);
+  }, [currentTime, location]);
 
   // ─── UI Theme Based on Time of Day ──────────────────────────
   // Default dark theme for SSR, then computed based on time after hydration
@@ -507,10 +301,11 @@ export default function SimulationPage() {
     if (!currentTime) {
       return {
         panelBg: 'rgba(10, 10, 26, 0.95)',
+        panelBgHex: '#0a0a1a',
         borderColor: 'rgba(74, 158, 255, 0.15)',
-        textPrimary: '#f0f0ff',
-        textSecondary: '#b0b0dd',
-        textMuted: '#9999bb',
+        textPrimary: '#ffffff',
+        textSecondary: '#c9d1d9',  // WCAG AA compliant on dark bg (7.5:1)
+        textMuted: '#8b949e',      // WCAG AA compliant on dark bg (4.6:1)
         cardBg: 'rgba(255,255,255,0.05)',
         cardBgHover: 'rgba(74,158,255,0.12)',
         dayFactor: 0,
@@ -526,15 +321,23 @@ export default function SimulationPage() {
     
     // Panel colors transition from dark (night) to light (day)
     const panelBg = `rgba(${Math.round(10 + dayFactor * 230)}, ${Math.round(10 + dayFactor * 230)}, ${Math.round(26 + dayFactor * 220)}, ${0.95 - dayFactor * 0.15})`;
+    const panelBgHex = rgbToHex(
+      Math.round(10 + dayFactor * 230),
+      Math.round(10 + dayFactor * 230),
+      Math.round(26 + dayFactor * 220)
+    );
     const borderColor = `rgba(${Math.round(74 + dayFactor * 100)}, ${Math.round(158 + dayFactor * 50)}, ${Math.round(255 - dayFactor * 50)}, ${0.15 + dayFactor * 0.2})`;
-    const textPrimary = dayFactor > 0.5 ? '#333' : '#f0f0ff';
-    const textSecondary = dayFactor > 0.5 ? '#555' : '#b0b0dd';
-    const textMuted = dayFactor > 0.5 ? '#777' : '#9999bb';
+    
+    // WCAG AA compliant text colors for both day and night modes
+    const textPrimary = dayFactor > 0.5 ? '#1a1a1a' : '#ffffff';
+    const textSecondary = dayFactor > 0.5 ? '#3a3a3a' : '#c9d1d9';  // 7.5:1 on dark, 10.5:1 on light
+    const textMuted = dayFactor > 0.5 ? '#5a5a5a' : '#8b949e';      // 4.6:1 on dark, 6.4:1 on light
+    
     const cardBg = dayFactor > 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
     const cardBgHover = dayFactor > 0.5 ? 'rgba(74,158,255,0.15)' : 'rgba(74,158,255,0.12)';
     
-    return { panelBg, borderColor, textPrimary, textSecondary, textMuted, cardBg, cardBgHover, dayFactor };
-  }, [currentTime, location, calculateSunPosition]);
+    return { panelBg, panelBgHex, borderColor, textPrimary, textSecondary, textMuted, cardBg, cardBgHover, dayFactor };
+  }, [currentTime, location]);
 
   // ─── Fetch comments/votes when a post is selected ──────────────
   const selectPost = useCallback((msg: ActivityMessage | null) => {
@@ -1081,6 +884,7 @@ export default function SimulationPage() {
               state: entity.data.state,
               height: entity.data.height,
               lastPostTime: entity.recentPost?.time,
+              needs: entity.data.needs,
             });
           }
           
@@ -1173,6 +977,39 @@ export default function SimulationPage() {
                   newGrid.position.y = 0.01;
                   scene.add(newGrid);
                   gridRef.current = newGrid;
+                }
+                
+                // Render water spots for bot survival
+                if (msg.data.worldConfig.waterSpots) {
+                  // Remove old water spots
+                  waterSpotsRef.current.forEach(mesh => {
+                    scene.remove(mesh);
+                    mesh.geometry.dispose();
+                    if (Array.isArray(mesh.material)) {
+                      mesh.material.forEach(mat => mat.dispose());
+                    } else {
+                      mesh.material.dispose();
+                    }
+                  });
+                  waterSpotsRef.current = [];
+                  
+                  // Create new water spots
+                  msg.data.worldConfig.waterSpots.forEach((spot: { x: number; z: number; radius: number }) => {
+                    const waterGeo = new THREE.CircleGeometry(spot.radius, 32);
+                    const waterMat = new THREE.MeshStandardMaterial({
+                      color: 0x2196f3,
+                      metalness: 0.8,
+                      roughness: 0.2,
+                      transparent: true,
+                      opacity: 0.7,
+                    });
+                    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+                    waterMesh.rotation.x = -Math.PI / 2;
+                    waterMesh.position.set(spot.x, 0.02, spot.z); // Slightly above ground
+                    scene.add(waterMesh);
+                    waterSpotsRef.current.push(waterMesh);
+                    console.log(`💧 Rendered water spot at (${spot.x.toFixed(1)}, ${spot.z.toFixed(1)}) with radius ${spot.radius}m`);
+                  });
                 }
               }
               if (msg.data.bots) {
@@ -1276,817 +1113,74 @@ export default function SimulationPage() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#0a0a1a' }}>
-      {/* Status bar */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '48px',
-          background: 'linear-gradient(180deg, rgba(10,10,26,0.95), rgba(10,10,26,0.6))',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 24px',
-          zIndex: 10,
-          borderBottom: '1px solid rgba(74, 158, 255, 0.15)',
-          fontFamily: "'Inter', system-ui, sans-serif",
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '20px' }}>🌍</span>
-          <span style={{ color: '#e0e0ff', fontWeight: 600, fontSize: '15px', letterSpacing: '0.5px' }}>
-            Bot-Talker Simulation
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ fontSize: '12px', color: '#a0a0c0', fontFamily: 'monospace', textAlign: 'right' }}>
-            <div>{currentTime?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) ?? '—'}</div>
-            <div>{currentTime?.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) ?? '—'}</div>
-          </div>
-          {location && (
-            <div style={{ fontSize: '11px', color: '#7a7a9a', fontFamily: 'monospace' }}>
-              📍 {location.lat.toFixed(3)}, {location.lng.toFixed(3)}
-            </div>
-          )}
-          {weather && (
-            <div style={{ 
-              fontSize: '12px', 
-              color: '#e0e0ff', 
-              fontFamily: 'system-ui',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'rgba(74, 158, 255, 0.1)',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              border: '1px solid rgba(74, 158, 255, 0.2)',
-            }}>
-              <span style={{ fontSize: '18px' }}>{getWeatherEmoji(weather)}</span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600 }}>{weather.temperature}°F</div>
-                <div style={{ fontSize: '10px', color: '#a0a0c0' }}>{weather.condition}</div>
-              </div>
-            </div>
-          )}
-          {weather?.airQuality && (
-            <button
-              onClick={() => setShowAirQuality(!showAirQuality)}
-              style={{
-                fontSize: '12px',
-                color: '#e0e0ff',
-                fontFamily: 'system-ui',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: showAirQuality ? 'rgba(74, 158, 255, 0.2)' : 'rgba(74, 158, 255, 0.1)',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: `1px solid ${showAirQuality ? 'rgba(74, 158, 255, 0.4)' : 'rgba(74, 158, 255, 0.2)'}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              <span style={{ fontSize: '16px' }}>🫁</span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ 
-                  fontWeight: 600,
-                  color: getAQIColor(weather.airQuality.us_aqi)
-                }}>
-                  AQI {weather.airQuality.us_aqi}
-                </div>
-                <div style={{ fontSize: '10px', color: '#a0a0c0' }}>{weather.airQuality.quality_label}</div>
-              </div>
-            </button>
-          )}
-          <div
-            ref={statusRef}
-            style={{ fontSize: '13px', color: '#fbbf24', transition: 'color 0.3s' }}
-          >
-            ⏳ Connecting...
-          </div>
-          <a
-            href="/dashboard"
-            style={{
-              color: '#8888cc',
-              fontSize: '13px',
-              textDecoration: 'none',
-              padding: '4px 12px',
-              border: '1px solid rgba(136,136,204,0.3)',
-              borderRadius: '6px',
-            }}
-          >
-            Dashboard →
-          </a>
-          <button
-            onClick={handleReset}
-            style={{
-              color: '#e0e0ff',
-              fontSize: '13px',
-              background: 'rgba(74, 158, 255, 0.15)',
-              padding: '4px 12px',
-              border: '1px solid rgba(74, 158, 255, 0.3)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-            }}
-          >
-            ↺ Reset View
-          </button>
-        </div>
-      </div>
+      {/* Status Bar */}
+      <StatusBar
+        currentTime={currentTime}
+        location={location}
+        weather={weather}
+        selectedBotInfo={selectedBotInfo}
+        showAirQuality={showAirQuality}
+        setShowAirQuality={setShowAirQuality}
+        showPhysicalNeeds={showPhysicalNeeds}
+        setShowPhysicalNeeds={setShowPhysicalNeeds}
+        statusRef={statusRef}
+        onReset={handleReset}
+      />
 
       {/* Activity Feed Panel */}
-      {showFeed && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '48px',
-            left: '0',
-            width: '280px',
-            bottom: '0',
-            background: uiTheme.panelBg,
-            borderRight: `1px solid ${uiTheme.borderColor}`,
-            zIndex: 10,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            flexDirection: 'column' as const,
-            transition: 'background 0.5s, border-color 0.5s',
-          }}
-        >
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: `1px solid ${uiTheme.borderColor}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            <span style={{ color: uiTheme.textSecondary, fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-              💬 Activity
-            </span>
-            <button
-              onClick={() => setShowFeed(false)}
-              style={{
-                color: uiTheme.textMuted,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '16px',
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          <div
-            ref={feedRef}
-            style={{
-              flex: 1,
-              overflowY: 'auto' as const,
-              padding: '8px 12px',
-            }}
-          >
-            {activityFeed.length === 0 && (
-              <div style={{ color: uiTheme.textMuted, fontSize: '12px', textAlign: 'center' as const, marginTop: '20px' }}>
-                Bot posts will appear here...
-              </div>
-            )}
-            {activityFeed.map(msg => (
-              <div
-                key={msg.id}
-                onClick={() => selectPost(msg)}
-                style={{
-                  padding: '8px 10px',
-                  marginBottom: '6px',
-                  background: selectedPost?.id === msg.id ? uiTheme.cardBgHover : uiTheme.cardBg,
-                  borderRadius: '8px',
-                  borderLeft: `3px solid ${msg.botColor}`,
-                  animation: 'fadeInMsg 0.3s ease',
-                  cursor: 'pointer',
-                  transition: 'background 0.15s',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ color: msg.botColor, fontSize: '11px', fontWeight: 600 }}>
-                    {msg.botName}
-                  </span>
-                  <span style={{ color: uiTheme.textMuted, fontSize: '10px' }}>
-                    {msg.time}
-                  </span>
-                </div>
-                <div style={{
-                  color: uiTheme.textPrimary,
-                  fontSize: '12px',
-                  lineHeight: '1.4',
-                  wordBreak: 'break-word' as const,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap' as const,
-                  transition: 'color 0.5s',
-                  fontWeight: 600,
-                }}>
-                  {msg.text}
-                </div>
-                {/* Content preview with citations */}
-                {msg.content && (
-                  <div style={{
-                    color: uiTheme.textSecondary,
-                    fontSize: '11px',
-                    lineHeight: '1.4',
-                    marginTop: '4px',
-                    wordBreak: 'break-word' as const,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical' as const,
-                    overflow: 'hidden',
-                    transition: 'color 0.5s',
-                  }}>
-                    {renderContentWithLinks(msg.content.length > 150 ? msg.content.substring(0, 150) + '...' : msg.content)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ActivityFeedPanel
+        uiTheme={uiTheme}
+        activityFeed={activityFeed}
+        selectedPost={selectedPost}
+        selectPost={selectPost}
+        showFeed={showFeed}
+        setShowFeed={setShowFeed}
+        feedRef={feedRef}
+      />
 
-      {/* Feed toggle (when hidden) */}
-      {!showFeed && (
-        <button
-          onClick={() => setShowFeed(true)}
-          style={{
-            position: 'absolute',
-            top: '56px',
-            left: '0',
-            background: uiTheme.panelBg,
-            border: `1px solid ${uiTheme.borderColor}`,
-            borderLeft: 'none',
-            borderRadius: '0 8px 8px 0',
-            padding: '8px 10px',
-            color: uiTheme.textSecondary,
-            cursor: 'pointer',
-            zIndex: 10,
-            fontSize: '14px',
-            transition: 'background 0.5s, border-color 0.5s, color 0.5s',
-          }}
-        >
-          💬
-        </button>
-      )}
-
-      {/* Bot Metrics Panel (upper left corner) */}
+      {/* Bot Metrics Panel */}
       {selectedBotInfo && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '115px',
-            left: showFeed ? '288px' : '8px',
-            width: '240px',
-            background: uiTheme.panelBg,
-            border: `1px solid ${uiTheme.borderColor}`,
-            borderRadius: '12px',
-            zIndex: 15,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            backdropFilter: 'blur(10px)',
-            padding: '14px 16px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            transition: 'left 0.3s, background 0.5s, border-color 0.5s',
-          }}
-        >
-          {/* Header */}
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            marginBottom: '14px',
-            paddingBottom: '10px',
-            borderBottom: `1px solid ${uiTheme.borderColor}`,
-          }}>
-            <span style={{ color: uiTheme.textSecondary, fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-              📊 Bot Metrics
-            </span>
-            <button
-              onClick={() => setSelectedBotInfo(null)}
-              style={{
-                color: uiTheme.textMuted,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '14px',
-                padding: '0',
-                lineHeight: 1,
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          
-          {/* Bot Identity */}
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '12px', 
-            marginBottom: '16px',
-            padding: '10px 12px',
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: '10px',
-            borderLeft: `4px solid ${selectedBotInfo.color}`,
-          }}>
-            <span style={{ fontSize: '28px', lineHeight: 1 }}>
-              {BOT_VISUALS[selectedBotInfo.personality]?.emoji || '🤖'}
-            </span>
-            <div>
-              <div style={{ color: selectedBotInfo.color, fontWeight: 600, fontSize: '15px', marginBottom: '2px' }}>
-                {selectedBotInfo.botName}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '11px', textTransform: 'capitalize' as const }}>
-                {selectedBotInfo.personality}
-              </div>
-            </div>
-          </div>
-
-          {/* Stats Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-            <div style={{ 
-              background: 'rgba(74, 158, 255, 0.1)', 
-              padding: '10px 8px', 
-              borderRadius: '8px',
-              textAlign: 'center' as const,
-            }}>
-              <div style={{ color: '#4a9eff', fontSize: '20px', fontWeight: 700, marginBottom: '4px' }}>
-                {selectedBotInfo.postCount}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '9px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
-                Posts
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(255, 152, 0, 0.1)', 
-              padding: '10px 8px', 
-              borderRadius: '8px',
-              textAlign: 'center' as const,
-            }}>
-              <div style={{ color: '#ff9800', fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
-                {selectedBotInfo.height ? `${selectedBotInfo.height.toFixed(2)}m` : '—'}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '9px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
-                Height
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(76, 175, 80, 0.1)', 
-              padding: '10px 8px', 
-              borderRadius: '8px',
-              textAlign: 'center' as const,
-            }}>
-              <div style={{ 
-                color: selectedBotInfo.state === 'posting' ? '#fbbf24' : '#4caf50', 
-                fontSize: '12px', 
-                fontWeight: 600,
-                textTransform: 'capitalize' as const,
-                marginBottom: '4px',
-              }}>
-                {selectedBotInfo.state || 'idle'}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '9px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
-                Status
-              </div>
-            </div>
-          </div>
-
-          {/* Last Active */}
-          {selectedBotInfo.lastPostTime && (
-            <div style={{ 
-              padding: '8px 10px',
-              background: 'rgba(255,255,255,0.03)',
-              borderRadius: '8px',
-              fontSize: '11px',
-              color: uiTheme.textMuted,
-              marginBottom: '10px',
-            }}>
-              <span style={{ opacity: 0.7 }}>Last active:</span>{' '}
-              <span style={{ color: uiTheme.textSecondary, fontWeight: 500 }}>{selectedBotInfo.lastPostTime}</span>
-            </div>
-          )}
-
-          {/* Bot ID */}
-          <div style={{ 
-            fontSize: '10px', 
-            color: uiTheme.textMuted,
-            fontFamily: 'monospace',
-            opacity: 0.5,
-            paddingTop: '6px',
-            borderTop: `1px solid ${uiTheme.borderColor}`,
-          }}>
-            ID: {selectedBotInfo.botId.substring(0, 12)}...
-          </div>
-        </div>
+        <BotMetricsPanel
+          uiTheme={uiTheme}
+          selectedBotInfo={selectedBotInfo}
+          showFeed={showFeed}
+          onClose={() => setSelectedBotInfo(null)}
+        />
       )}
 
-      {/* Air Quality Panel (upper right corner) */}
+      {/* Air Quality Panel */}
       {showAirQuality && weather?.airQuality && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '115px',
-            right: '8px',
-            width: '320px',
-            background: uiTheme.panelBg,
-            border: `1px solid ${uiTheme.borderColor}`,
-            borderRadius: '12px',
-            zIndex: 15,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            backdropFilter: 'blur(10px)',
-            padding: '16px 18px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            transition: 'background 0.5s, border-color 0.5s',
-          }}
-        >
-          {/* Header */}
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            marginBottom: '16px',
-            paddingBottom: '12px',
-            borderBottom: `1px solid ${uiTheme.borderColor}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '22px' }}>🫁</span>
-              <span style={{ color: uiTheme.textSecondary, fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-                Air Quality Index
-              </span>
-            </div>
-            <button
-              onClick={() => setShowAirQuality(false)}
-              style={{
-                color: uiTheme.textMuted,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '14px',
-                padding: '0',
-                lineHeight: 1,
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          
-          {/* AQI Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '18px' }}>
-            <div style={{ 
-              background: `${getAQIColor(weather.airQuality.us_aqi)}15`,
-              padding: '14px',
-              borderRadius: '10px',
-              border: `2px solid ${getAQIColor(weather.airQuality.us_aqi)}40`,
-              textAlign: 'center' as const,
-            }}>
-              <div style={{ 
-                color: getAQIColor(weather.airQuality.us_aqi), 
-                fontSize: '28px', 
-                fontWeight: 700, 
-                marginBottom: '4px',
-                textShadow: `0 0 10px ${getAQIColor(weather.airQuality.us_aqi)}40`
-              }}>
-                {weather.airQuality.us_aqi}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '10px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
-                US AQI
-              </div>
-              <div style={{ 
-                color: getAQIColor(weather.airQuality.us_aqi), 
-                fontSize: '9px', 
-                fontWeight: 600,
-                marginTop: '6px',
-                textTransform: 'uppercase' as const
-              }}>
-                {weather.airQuality.quality_label}
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(74, 158, 255, 0.1)', 
-              padding: '14px',
-              borderRadius: '10px',
-              border: '2px solid rgba(74, 158, 255, 0.3)',
-              textAlign: 'center' as const,
-            }}>
-              <div style={{ 
-                color: '#4a9eff', 
-                fontSize: '28px', 
-                fontWeight: 700, 
-                marginBottom: '4px',
-                textShadow: '0 0 10px rgba(74, 158, 255, 0.4)'
-              }}>
-                {weather.airQuality.european_aqi}
-              </div>
-              <div style={{ color: uiTheme.textMuted, fontSize: '10px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
-                European AQI
-              </div>
-              <div style={{ 
-                color: uiTheme.textSecondary, 
-                fontSize: '9px', 
-                marginTop: '6px'
-              }}>
-                (0-100 scale)
-              </div>
-            </div>
-          </div>
-
-          {/* Particulate Matter */}
-          <div style={{ marginBottom: '14px' }}>
-            <div style={{ 
-              color: uiTheme.textMuted, 
-              fontSize: '9px', 
-              textTransform: 'uppercase' as const, 
-              letterSpacing: '1px',
-              marginBottom: '10px',
-              fontWeight: 600
-            }}>
-              🪨 Particulate Matter
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '10px 12px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '9px', color: uiTheme.textMuted, marginBottom: '4px' }}>PM2.5</div>
-                <div style={{ fontSize: '16px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.pm2_5} <span style={{ fontSize: '10px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '10px 12px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '9px', color: uiTheme.textMuted, marginBottom: '4px' }}>PM10</div>
-                <div style={{ fontSize: '16px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.pm10} <span style={{ fontSize: '10px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Gases */}
-          <div>
-            <div style={{ 
-              color: uiTheme.textMuted, 
-              fontSize: '9px', 
-              textTransform: 'uppercase' as const, 
-              letterSpacing: '1px',
-              marginBottom: '10px',
-              fontWeight: 600
-            }}>
-              💨 Atmospheric Gases
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '8px 10px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '8px', color: uiTheme.textMuted, marginBottom: '2px' }}>Ozone (O₃)</div>
-                <div style={{ fontSize: '14px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.ozone} <span style={{ fontSize: '9px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '8px 10px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '8px', color: uiTheme.textMuted, marginBottom: '2px' }}>NO₂</div>
-                <div style={{ fontSize: '14px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.nitrogen_dioxide} <span style={{ fontSize: '9px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '8px 10px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '8px', color: uiTheme.textMuted, marginBottom: '2px' }}>SO₂</div>
-                <div style={{ fontSize: '14px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.sulphur_dioxide} <span style={{ fontSize: '9px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-              <div style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                padding: '8px 10px', 
-                borderRadius: '8px',
-                border: `1px solid ${uiTheme.borderColor}`,
-              }}>
-                <div style={{ fontSize: '8px', color: uiTheme.textMuted, marginBottom: '2px' }}>CO</div>
-                <div style={{ fontSize: '14px', color: uiTheme.textPrimary, fontWeight: 600 }}>
-                  {weather.airQuality.carbon_monoxide} <span style={{ fontSize: '9px', color: uiTheme.textMuted }}>µg/m³</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Info Footer */}
-          <div style={{ 
-            fontSize: '9px', 
-            color: uiTheme.textMuted,
-            marginTop: '14px',
-            paddingTop: '12px',
-            borderTop: `1px solid ${uiTheme.borderColor}`,
-            textAlign: 'center' as const,
-          }}>
-            Data from Open-Meteo Air Quality API • Updated every 10 min
-          </div>
-        </div>
+        <AirQualityPanel
+          uiTheme={uiTheme}
+          airQuality={weather.airQuality}
+          onClose={() => setShowAirQuality(false)}
+        />
       )}
 
-      {/* Post Detail Panel (right side) */}
+      {/* Physical Needs Panel */}
+      {showPhysicalNeeds && selectedBotInfo?.needs && (
+        <PhysicalNeedsPanel
+          uiTheme={uiTheme}
+          selectedBotInfo={selectedBotInfo}
+          needs={selectedBotInfo.needs}
+          showAirQuality={showAirQuality}
+          hasAirQuality={!!weather?.airQuality}
+          onClose={() => setShowPhysicalNeeds(false)}
+        />
+      )}
+
+      {/* Post Detail Panel */}
       {selectedPost && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '48px',
-            right: '0',
-            width: '340px',
-            bottom: '0',
-            background: uiTheme.panelBg,
-            borderLeft: `1px solid ${uiTheme.borderColor}`,
-            zIndex: 10,
-            fontFamily: "'Inter', system-ui, sans-serif",
-            backdropFilter: 'blur(10px)',
-            display: 'flex',
-            flexDirection: 'column' as const,
-            animation: 'slideInRight 0.2s ease',
-            transition: 'background 0.5s, border-color 0.5s',
-          }}
-        >
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: `1px solid ${uiTheme.borderColor}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            <span style={{ color: uiTheme.textSecondary, fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase' as const }}>
-              📄 Post Detail
-            </span>
-            <button
-              onClick={() => selectPost(null)}
-              style={{
-                color: uiTheme.textMuted,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '16px',
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' as const, padding: '16px' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '12px',
-            }}>
-              <div style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                background: selectedPost.botColor,
-              }} />
-              <a
-                href={`/bot/${encodeURIComponent(selectedPost.botName)}`}
-                style={{
-                  color: selectedPost.botColor,
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                  borderBottom: `1px dashed ${selectedPost.botColor}44`,
-                  cursor: 'pointer',
-                }}
-              >
-                {selectedPost.botName}
-              </a>
-              <span style={{ color: uiTheme.textMuted, fontSize: '11px', marginLeft: 'auto' }}>
-                {selectedPost.time}
-              </span>
-            </div>
-            {selectedPost.text && (
-              <h3 style={{
-                color: uiTheme.textPrimary,
-                fontSize: '16px',
-                fontWeight: 700,
-                marginBottom: '12px',
-                lineHeight: '1.4',
-                transition: 'color 0.5s',
-              }}>
-                {selectedPost.text}
-              </h3>
-            )}
-            <div style={{
-              color: uiTheme.dayFactor > 0.5 ? '#555' : '#ccc',
-              fontSize: '13px',
-              lineHeight: '1.7',
-              whiteSpace: 'pre-wrap' as const,
-              wordBreak: 'break-word' as const,
-              transition: 'color 0.5s',
-            }}>
-              {renderContentWithLinks(selectedPost.content)}
-            </div>
-
-            {/* Votes */}
-            {postDetail && (
-              <div style={{
-                display: 'flex',
-                gap: '20px',
-                marginTop: '16px',
-                padding: '12px 0',
-                borderTop: `1px solid ${uiTheme.borderColor}`,
-                fontSize: '14px',
-                fontWeight: 500,
-              }}>
-                <span style={{ color: '#4ade80' }}>
-                  👍 {postDetail.upvotes}
-                </span>
-                <span style={{ color: '#f87171' }}>
-                  👎 {postDetail.downvotes}
-                </span>
-              </div>
-            )}
-
-            {/* Comments */}
-            {detailLoading && (
-              <div style={{ color: uiTheme.textMuted, fontSize: '12px', marginTop: '16px' }}>⏳ Loading comments...</div>
-            )}
-            {postDetail && postDetail.comments.length > 0 && (
-              <div style={{ marginTop: '16px' }}>
-                <div style={{
-                  color: uiTheme.textSecondary,
-                  fontSize: '11px',
-                  letterSpacing: '1px',
-                  textTransform: 'uppercase' as const,
-                  marginBottom: '10px',
-                }}>
-                  💬 Comments ({postDetail.commentCount})
-                </div>
-                {postDetail.comments.map(comment => (
-                  <div
-                    key={comment.id}
-                    style={{
-                      background: uiTheme.cardBg,
-                      borderRadius: '8px',
-                      padding: '10px 12px',
-                      marginBottom: '8px',
-                      borderLeft: `2px solid ${uiTheme.borderColor}`,
-                      transition: 'background 0.5s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <a
-                        href={`/bot/${encodeURIComponent(comment.agent.name)}`}
-                        style={{
-                          color: uiTheme.textSecondary,
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          textDecoration: 'none',
-                        }}
-                      >
-                        {comment.agent.name}
-                      </a>
-                      <span style={{ color: uiTheme.textMuted, fontSize: '10px' }}>
-                        {new Date(comment.createdAt).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div style={{
-                      color: uiTheme.dayFactor > 0.5 ? '#555' : '#ccc',
-                      fontSize: '12px',
-                      lineHeight: '1.5',
-                      whiteSpace: 'pre-wrap' as const,
-                      wordBreak: 'break-word' as const,
-                      transition: 'color 0.5s',
-                    }}>
-                      {renderContentWithLinks(comment.content)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {postDetail && postDetail.comments.length === 0 && !detailLoading && (
-              <div style={{ color: uiTheme.textMuted, fontSize: '12px', marginTop: '16px', fontStyle: 'italic' }}>
-                No comments yet
-              </div>
-            )}
-          </div>
-        </div>
+        <PostDetailPanel
+          uiTheme={uiTheme}
+          selectedPost={selectedPost}
+          postDetail={postDetail}
+          detailLoading={detailLoading}
+          onClose={() => selectPost(null)}
+        />
       )}
 
+      {/* Bot Types Legend */}
       <div
         style={{
           position: 'absolute',

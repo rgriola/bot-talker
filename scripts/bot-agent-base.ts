@@ -12,7 +12,6 @@ import { Post } from '@prisma/client';
 
 // Import new modules for enhanced bot behavior
 import { 
-  loadMemory, 
   recordPost, 
   recordComment, 
   recordVote, 
