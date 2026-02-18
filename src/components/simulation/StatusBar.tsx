@@ -20,14 +20,16 @@ export interface StatusBarProps {
   showAirQuality: boolean;
   /** Callback to toggle air quality panel */
   setShowAirQuality: (show: boolean) => void;
-  /** Whether physical needs panel is shown */
-  showPhysicalNeeds: boolean;
-  /** Callback to toggle physical needs panel */
-  setShowPhysicalNeeds: (show: boolean) => void;
   /** Ref for connection status element */
   statusRef: RefObject<HTMLDivElement | null>;
   /** Callback to reset camera view */
   onReset: () => void;
+  /** Simulation speed (1, 2, 4) */
+  simSpeed: number;
+  /** Callback to change simulation speed */
+  onSetSpeed: (speed: number) => void;
+  /** Callback for full world reset */
+  onFullReset: () => void;
 }
 
 /**
@@ -41,10 +43,11 @@ export function StatusBar({
   selectedBotInfo,
   showAirQuality,
   setShowAirQuality,
-  showPhysicalNeeds,
-  setShowPhysicalNeeds,
   statusRef,
   onReset,
+  simSpeed,
+  onSetSpeed,
+  onFullReset,
 }: StatusBarProps) {
   return (
     <div
@@ -89,9 +92,9 @@ export function StatusBar({
 
         {/* Weather */}
         {weather && (
-          <div style={{ 
-            fontSize: '12px', 
-            color: '#e0e0ff', 
+          <div style={{
+            fontSize: '12px',
+            color: '#e0e0ff',
             fontFamily: 'system-ui',
             display: 'flex',
             alignItems: 'center',
@@ -130,7 +133,7 @@ export function StatusBar({
           >
             <span style={{ fontSize: '16px' }}>🫁</span>
             <div style={{ textAlign: 'left' }}>
-              <div style={{ 
+              <div style={{
                 fontWeight: 600,
                 color: getAQIColor(weather.airQuality.us_aqi)
               }}>
@@ -141,46 +144,66 @@ export function StatusBar({
           </button>
         )}
 
-        {/* Physical Needs Button */}
-        {selectedBotInfo?.needs && (
-          <button
-            onClick={() => setShowPhysicalNeeds(!showPhysicalNeeds)}
-            style={{
-              fontSize: '12px',
-              color: '#e0e0ff',
-              fontFamily: 'system-ui',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: showPhysicalNeeds ? 'rgba(74, 158, 255, 0.2)' : 'rgba(74, 158, 255, 0.1)',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              border: `1px solid ${showPhysicalNeeds ? 'rgba(74, 158, 255, 0.4)' : 'rgba(74, 158, 255, 0.2)'}`,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-          >
-            <span style={{ fontSize: '16px' }}>💧</span>
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ 
-                fontWeight: 600,
-                color: selectedBotInfo.needs.water < 30 ? '#f44336' : 
-                       selectedBotInfo.needs.water < 60 ? '#ff9800' : '#4caf50'
-              }}>
-                {Math.round(selectedBotInfo.needs.water)}%
-              </div>
-              <div style={{ fontSize: '10px', color: '#a0a0c0' }}>Physical Needs</div>
-            </div>
-          </button>
-        )}
-
         {/* Connection Status */}
         <div
           ref={statusRef}
-          style={{ fontSize: '13px', color: '#fbbf24', transition: 'color 0.3s' }}
+          style={{ fontSize: '12px', color: '#fbbf24', transition: 'color 0.3s', fontWeight: 600, minWidth: '80px' }}
         >
           ⏳ Connecting...
         </div>
+
+        {/* Speed Controls */}
+        <div style={{
+          display: 'flex',
+          background: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '8px',
+          padding: '2px',
+          border: '1px solid rgba(74, 158, 255, 0.2)'
+        }}>
+          {[1, 2, 4].map(s => (
+            <button
+              key={s}
+              onClick={() => onSetSpeed(s)}
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: simSpeed === s ? '#fff' : '#888',
+                background: simSpeed === s ? 'rgba(74, 158, 255, 0.4)' : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              title={`Press 'Q' to toggle speed`}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+
+        {/* Full Reset Button (Temporary) */}
+        <button
+          onClick={onFullReset}
+          style={{
+            color: '#ff4d4d',
+            fontSize: '12px',
+            fontWeight: 600,
+            background: 'rgba(255, 77, 77, 0.1)',
+            padding: '6px 14px',
+            border: '1px solid rgba(255, 77, 77, 0.3)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.2s',
+          }}
+          onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 77, 77, 0.25)')}
+          onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(255, 77, 77, 0.1)')}
+        >
+          <span>🚨</span> Full Reset
+        </button>
 
         {/* Dashboard Link */}
         <a

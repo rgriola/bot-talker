@@ -44,6 +44,12 @@ export class PrismaConnector implements WorldConnector {
                 content,
                 agentId: agent.id
             }
+        }).then(async (post) => {
+            await this.prisma.agent.update({
+                where: { id: agent.id },
+                data: { totalPosts: { increment: 1 } }
+            });
+            return post;
         });
     }
 
@@ -57,6 +63,12 @@ export class PrismaConnector implements WorldConnector {
                 postId,
                 agentId: agent.id
             }
+        }).then(async (comment) => {
+            await this.prisma.agent.update({
+                where: { id: agent.id },
+                data: { totalComments: { increment: 1 } }
+            });
+            return comment;
         });
     }
 
@@ -85,6 +97,15 @@ export class PrismaConnector implements WorldConnector {
                 postId,
                 agentId: agent.id
             }
+        }).then(async (vote) => {
+            await this.prisma.agent.update({
+                where: { id: agent.id },
+                data: {
+                    totalUpvotes: value === 1 ? { increment: 1 } : undefined,
+                    totalDownvotes: value === -1 ? { increment: 1 } : undefined,
+                }
+            });
+            return vote;
         });
     }
 
@@ -102,20 +123,11 @@ export class PrismaConnector implements WorldConnector {
 
         const since = new Date(Date.now() - sinceMinutes * 60 * 1000);
 
-        // Get posts by this agent
-        const myPosts = await this.prisma.post.findMany({
-            where: { agentId: agent.id },
-            select: { id: true }
-        });
-
-        const myPostIds = myPosts.map(p => p.id);
-        if (myPostIds.length === 0) return [];
-
-        // Get comments on those posts by OTHER agents
+        // Get comments on those posts by OTHER agents using a relational filter
         const replies = await this.prisma.comment.findMany({
             where: {
-                postId: { in: myPostIds },
-                agentId: { not: agent.id }, // Not by this agent
+                post: { agentId: agent.id }, // Efficient join
+                agentId: { not: agent.id },  // Not by this agent
                 createdAt: { gte: since }
             },
             include: {
@@ -138,19 +150,10 @@ export class PrismaConnector implements WorldConnector {
 
         const since = new Date(Date.now() - sinceMinutes * 60 * 1000);
 
-        // Get comments by this agent
-        const myComments = await this.prisma.comment.findMany({
-            where: { agentId: agent.id },
-            select: { id: true }
-        });
-
-        const myCommentIds = myComments.map(c => c.id);
-        if (myCommentIds.length === 0) return [];
-
-        // Get comments that are replies to this agent's comments
+        // Get comments that are replies to this agent's comments using a relational filter
         const replies = await this.prisma.comment.findMany({
             where: {
-                parentId: { in: myCommentIds },
+                parent: { agentId: agent.id }, // Efficient self-relation join
                 agentId: { not: agent.id },
                 createdAt: { gte: since }
             },
@@ -179,6 +182,12 @@ export class PrismaConnector implements WorldConnector {
                 parentId: parentCommentId,
                 agentId: agent.id
             }
+        }).then(async (comment) => {
+            await this.prisma.agent.update({
+                where: { id: agent.id },
+                data: { totalComments: { increment: 1 } }
+            });
+            return comment;
         });
     }
 

@@ -60,6 +60,9 @@ const MOVE_SPEED = 0.1;           // meters per tick (tiny steps, very frequent)
 const WANDER_RADIUS = 5;         // max distance per wander decision (meters)
 const TICK_INTERVAL = 200;        // ms between movement ticks (5x per second)
 const POLL_INTERVAL = 5000;       // ms between DB polls
+
+let simSpeedMultiplier = 1;       // 1x, 2x, 4x speed
+let movementTimeout: NodeJS.Timeout | null = null;
 // Cooldowns to prevent spamming
 const sharingCooldowns = new Map<string, number>(); // key: "giver-receiver", value: timestamp
 
@@ -77,31 +80,54 @@ const NAV_GRID_CELL_SIZE = WORLD_CONFIG.NAV_GRID_CELL_SIZE;
 // Helper functions removed: isWalkable, findPath, simplifyPath, random*, detectPersonality
 // Now imported from src/lib/
 
-// ─── Weather State (for homeostasis) ────────────────────────────
+// ─── Weather & Air Quality (for homeostasis) ────────────────────
 let currentTemperature: number = 20; // Default moderate temp (°C)
+let currentAQI: number = 25;         // Default good AQI
 
-async function fetchWorldTemperature() {
+async function fetchWorldWeather() {
   try {
     const lat = process.env.BOT_LATITUDE || '40.71';
     const lon = process.env.BOT_LONGITUDE || '-74.01';
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
-    const res = await fetch(url);
-    const data = await res.json();
-    currentTemperature = data.current_weather?.temperature ?? 20;
-    console.log(`🌡️ World temperature: ${currentTemperature}°C`);
+
+    // Fetch Temperature
+    const tempUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+    const tempRes = await fetch(tempUrl);
+    const tempData = await tempRes.json();
+    currentTemperature = tempData.current_weather?.temperature ?? 20;
+
+    // Fetch Air Quality (US AQI)
+    const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi`;
+    const aqiRes = await fetch(aqiUrl);
+    const aqiData = await aqiRes.json();
+    currentAQI = aqiData.current?.us_aqi ?? 25;
+
+    // Update world config for broadcast
+    worldConfig.aqi = currentAQI;
+
+    console.log(`🌡️  Weather Update: ${currentTemperature}°C, AQI: ${currentAQI}`);
   } catch (err) {
-    console.error('⚠️ Failed to fetch weather for homeostasis:', err);
+    console.error('⚠️ Failed to fetch weather data:', err);
   }
 }
 
+// Initial fetch
+fetchWorldWeather();
+
 // Refresh weather every 15 minutes
-setInterval(fetchWorldTemperature, 15 * 60 * 1000);
+setInterval(fetchWorldWeather, 15 * 60 * 1000);
 
 /** Get homeostasis decay multiplier based on temperature */
 function getTemperatureModifier(): number {
   if (currentTemperature > 35 || currentTemperature < 0) return 3.0;  // Extreme
   if (currentTemperature > 30 || currentTemperature < 5) return 2.0;  // Hot/cold
   return 1.0; // Moderate
+}
+
+/** Get homeostasis decay multiplier based on AQI */
+function getAQIModifier(): number {
+  if (currentAQI < 50) return 0.95;  // -5% decay (healthier)
+  if (currentAQI > 150) return 1.05; // +5% decay (stressful)
+  return 1.0;
 }
 
 /** Create a full needs post tracker for all need types */
@@ -118,13 +144,77 @@ function createNeedsTracker() {
   };
 }
 
+/** Initialize lifetime stats for an agent */
+function createLifetimeStats(agent?: any) {
+  return {
+    totalWood: agent?.totalWood || 0,
+    totalStone: agent?.totalStone || 0,
+    totalWater: agent?.totalWater || 0,
+    totalFood: agent?.totalFood || 0,
+    reproductionCount: agent?.reproductionCount || 0,
+    childrenCount: agent?.childrenCount || 0,
+    sheltersBuilt: agent?.sheltersBuilt || 0,
+    totalPosts: agent?.totalPosts || 0,
+    totalComments: agent?.totalComments || 0,
+    totalUpvotes: agent?.totalUpvotes || 0,
+    totalDownvotes: agent?.totalDownvotes || 0,
+    waterRefillCount: agent?.waterRefillCount || 0,
+    foodRefillCount: agent?.foodRefillCount || 0,
+    helpCount: agent?.helpCount || 0,
+  };
+}
+
+// ─── Remote Reset (calls the external script logic) ─────────────
+async function handleRemoteReset() {
+  console.log('🔄 Remote reset triggered via WebSocket...');
+
+  // Clear local state
+  bots.clear();
+  worldConfig.shelters = [];
+
+  // Wipe DB (calling the same logic as reset-simulation.ts)
+  try {
+    await prisma.vote.deleteMany({});
+    await prisma.comment.deleteMany({});
+    await prisma.post.deleteMany({});
+    await prisma.shelter.deleteMany({});
+    await (prisma.agent as any).updateMany({
+      data: {
+        spawnDate: new Date(),
+        totalWood: 0,
+        totalStone: 0,
+        totalWater: 0,
+        totalFood: 0,
+        reproductionCount: 0,
+        childrenCount: 0,
+        sheltersBuilt: 0,
+        totalPosts: 0,
+        totalComments: 0,
+        totalUpvotes: 0,
+        totalDownvotes: 0,
+        waterRefillCount: 0,
+        foodRefillCount: 0,
+        helpCount: 0,
+      }
+    });
+
+    // Re-initialize
+    await initializeBots();
+
+    // Broadcast status to all viewers - clients will handle the frontend cleanup
+    broadcast({ type: 'sim:reset:complete' });
+    console.log('✅ Remote reset completed.');
+  } catch (err) {
+    console.error('❌ Remote reset failed:', err);
+  }
+}
+
 // ─── Initialize Bots from Database ──────────────────────────────
 
 async function initializeBots() {
   try {
     const agents = await prisma.agent.findMany({
       where: { enabled: true },
-      select: { id: true, name: true, personality: true }
     });
 
     if (agents.length === 0) {
@@ -156,14 +246,20 @@ async function initializeBots() {
           needsPostTracker: createNeedsTracker(),
           path: [],
           pathIndex: 0,
+          lifetimeStats: createLifetimeStats(),
         };
         bot.targetX = bot.x;
         bot.targetZ = bot.z;
 
-        // Enable needs for all demo bots
+        // Enable needs for all demo bots with slight randomization
         bot.needs = initializeNeeds();
+        // Stagger needs so they don't all get tired at once
+        bot.needs.water -= Math.random() * 20;
+        bot.needs.food -= Math.random() * 20;
+        bot.needs.sleep -= Math.random() * 20;
+
         bot.lastNeedUpdate = new Date();
-        console.log(`   💧 ${d.name} needs system enabled`);
+        console.log(`   💧 ${d.name} needs system enabled (randomized start)`);
 
         bots.set(bot.botId, bot);
       }
@@ -179,7 +275,7 @@ async function initializeBots() {
           x: Math.cos(angle) * dist,
           y: 0,
           z: Math.sin(angle) * dist,
-          targetX: 0, targetY: 0, targetZ: 0,
+          targetX: Math.cos(angle) * dist, targetY: 0, targetZ: Math.sin(angle) * dist,
           state: 'idle',
           width: randomBotWidth(),
           height: randomBotHeight(),
@@ -189,14 +285,20 @@ async function initializeBots() {
           needsPostTracker: createNeedsTracker(),
           path: [],
           pathIndex: 0,
+          lifetimeStats: createLifetimeStats(agent),
         };
         bot.targetX = bot.x;
         bot.targetZ = bot.z;
 
-        // Enable needs for all bots
+        // Enable needs for all bots with slight randomization
         bot.needs = initializeNeeds();
+        // Stagger needs so they don't all get tired at once
+        bot.needs.water -= Math.random() * 20;
+        bot.needs.food -= Math.random() * 20;
+        bot.needs.sleep -= Math.random() * 20;
+
         bot.lastNeedUpdate = new Date();
-        console.log(`   💧 ${agent.name} needs system enabled`);
+        console.log(`   💧 ${agent.name} needs system enabled (randomized start)`);
 
         bots.set(bot.botId, bot);
       }
@@ -211,46 +313,56 @@ async function initializeBots() {
     );
     worldConfig.groundRadius = Math.round(groundSide / 2);
 
-    // Create water spot (lake) - place it off to one side
-    const waterX = worldConfig.groundRadius * 0.6; // 60% to the right
-    const waterZ = worldConfig.groundRadius * 0.3; // 30% forward
-    worldConfig.waterSpots = [
-      { x: waterX, z: waterZ, radius: 3 } // 3-meter radius lake
-    ];
+    // Create randomized resource spots
+    const innerRadius = 2.9; // Tightened from 3.0 to allow closer center placement
+    const outerRadius = worldConfig.groundRadius; // Full radius for edge spawning
 
-    // Create food spot (smaller than water) - place it opposite side
-    const foodX = -worldConfig.groundRadius * 0.5; // 50% to the left
-    const foodZ = worldConfig.groundRadius * 0.4;  // 40% forward
-    worldConfig.foodSpots = [
-      { x: foodX, z: foodZ, radius: 1.5 } // 1.5-meter radius food patch
-    ];
+    const getRandomPos = (radius: number) => {
+      const angle = Math.random() * Math.PI * 2;
+      // Allow center to be positioned so 20% of the radius is outside (max dist = outerRadius - 0.8*radius)
+      const maxDist = outerRadius - (radius * 0.8);
+      const minDist = innerRadius + (radius * 1.0); // Keep center at least full radius away from sundial buffer
+      const dist = minDist + Math.random() * (maxDist - minDist);
+      return {
+        x: Math.cos(angle) * dist,
+        z: Math.sin(angle) * dist
+      };
+    };
 
-    // Create wood spot (forest) - trees for building materials
-    const woodX = worldConfig.groundRadius * 0.3;  // 30% to the right
-    const woodZ = -worldConfig.groundRadius * 0.5; // 50% back
-    worldConfig.woodSpots = [
-      { x: woodX, z: woodZ, radius: 2.5, available: 100 } // Forest with wood
-    ];
+    // 1. Water spot (lake)
+    const waterPos = getRandomPos(3);
+    worldConfig.waterSpots = [{ x: waterPos.x, z: waterPos.z, radius: 3 }];
 
-    // Create stone spot (quarry) - rocks for building materials
-    const stoneX = -worldConfig.groundRadius * 0.4; // 40% to the left
-    const stoneZ = -worldConfig.groundRadius * 0.4; // 40% back
-    worldConfig.stoneSpots = [
-      { x: stoneX, z: stoneZ, radius: 2, available: 100 } // Quarry with stone
-    ];
+    // 2. Food spot
+    const foodPos = getRandomPos(1.5);
+    worldConfig.foodSpots = [{ x: foodPos.x, z: foodPos.z, radius: 1.5 }];
+
+    // 3. Wood spot (forest)
+    const woodPos = getRandomPos(2.5);
+    worldConfig.woodSpots = [{ x: woodPos.x, z: woodPos.z, radius: 2.5, available: 100 }];
+
+    // 4. Stone spot (quarry)
+    const stonePos = getRandomPos(2);
+    worldConfig.stoneSpots = [{ x: stonePos.x, z: stonePos.z, radius: 2, available: 100 }];
 
     // Initialize empty shelters array
     worldConfig.shelters = [];
 
     // Load existing shelters from database
-    const dbShelters = await prisma.shelter.findMany();
+    const dbShelters = await prisma.shelter.findMany({
+      include: { owner: true }
+    });
     for (const shelter of dbShelters) {
+      // Find bot in memory or use DB data
+      const bot = bots.get(shelter.ownerId);
       worldConfig.shelters.push({
         id: shelter.id,
         type: shelter.type,
         x: shelter.x,
         z: shelter.z,
         ownerId: shelter.ownerId,
+        ownerName: bot?.botName || shelter.owner.name,
+        ownerColor: bot?.color || '#888888', // Default color if bot not in memory
         built: shelter.built,
         buildProgress: shelter.buildProgress,
       });
@@ -262,10 +374,10 @@ async function initializeBots() {
 
     console.log(`✅ Loaded ${bots.size} bots into simulation (ground: ${groundSide.toFixed(0)}×${groundSide.toFixed(0)}m)`);
     console.log(`   ☀️ Sundial at center (0, 0) radius: 0.8m`);
-    console.log(`   💧 Water spot at (${waterX.toFixed(1)}, ${waterZ.toFixed(1)}) radius: 3m`);
-    console.log(`   🍎 Food spot at (${foodX.toFixed(1)}, ${foodZ.toFixed(1)}) radius: 1.5m`);
-    console.log(`   🌲 Wood spot at (${woodX.toFixed(1)}, ${woodZ.toFixed(1)}) radius: 2.5m`);
-    console.log(`   🪨 Stone spot at (${stoneX.toFixed(1)}, ${stoneZ.toFixed(1)}) radius: 2m`);
+    console.log(`   💧 Water spot at (${worldConfig.waterSpots[0].x.toFixed(1)}, ${worldConfig.waterSpots[0].z.toFixed(1)}) radius: 3m`);
+    console.log(`   🍎 Food spot at (${worldConfig.foodSpots[0].x.toFixed(1)}, ${worldConfig.foodSpots[0].z.toFixed(1)}) radius: 1.5m`);
+    console.log(`   🌲 Wood spot at (${worldConfig.woodSpots[0].x.toFixed(1)}, ${worldConfig.woodSpots[0].z.toFixed(1)}) radius: 2.5m`);
+    console.log(`   🪨 Stone spot at (${worldConfig.stoneSpots[0].x.toFixed(1)}, ${worldConfig.stoneSpots[0].z.toFixed(1)}) radius: 2m`);
     for (const bot of bots.values()) {
       console.log(`   🤖 ${bot.botName} (${bot.personality}) ${bot.color} ${bot.width.toFixed(2)}×${bot.height.toFixed(2)}m at (${bot.x.toFixed(1)}, ${bot.z.toFixed(1)})`);
     }
@@ -294,6 +406,7 @@ async function initializeBots() {
         needsPostTracker: createNeedsTracker(),
         path: [],
         pathIndex: 0,
+        lifetimeStats: createLifetimeStats(),
       };
       bot.targetX = bot.x;
       bot.targetZ = bot.z;
@@ -321,9 +434,27 @@ function simulateMovement() {
     if (elapsedMinutes > 0.01) { // Update if at least ~0.6 seconds passed
       // Apply homeostasis weather modifier
       const tempMod = getTemperatureModifier();
+      const aqiMod = getAQIModifier();
+
+      // Increased strain during physical labor
+      const isLaboring = ['gathering-wood', 'gathering-stone', 'building-shelter'].includes(bot.state);
+      const laborMultiplier = isLaboring ? 2.5 : 1.0;
+
+      const isSleeping = bot.state === 'sleeping';
+
       bot.needs = decayNeeds(bot.needs, elapsedMinutes, {
-        homeostasis: 5 * tempMod,
+        homeostasis: 5 * tempMod * aqiMod,
+        water: isSleeping ? 0 : 100 * laborMultiplier,
+        food: isSleeping ? 0 : 50 * laborMultiplier,
       });
+
+      // ─── Passive Recovery: "Thriving" State ────────────────
+      // If basic needs are high (>70%), homeostasis slowly recovers automatically
+      if (bot.needs.water > 70 && bot.needs.food > 70 && bot.needs.sleep > 70 &&
+        bot.needs.clothing > 30 && bot.needs.shelter > 30) {
+        // Slowly heal (approx 5 points per minute when thriving)
+        bot.needs = fulfillNeed(bot.needs, 'homeostasis', 5 * elapsedMinutes);
+      }
       bot.lastNeedUpdate = now;
 
       // ─── Air: passive breathing (auto-restore) ─────────────
@@ -370,9 +501,8 @@ function simulateMovement() {
           if (neighbor.botId === bot.botId) continue;
           if (neighbor.state === 'seeking-to-help' || neighbor.state === 'sleeping' || neighbor.state === 'coupling') continue;
 
-          const dist = Math.sqrt(Math.pow(bot.x - neighbor.x, 2) + Math.pow(bot.z - neighbor.z, 2));
-          // Search for neighbors who actually NEED help (water or food)
-          if (neighbor.needs && (neighbor.needs.water < 20 || neighbor.needs.food < 20)) {
+          // Search for neighbors who actually NEED help (using 35% proactive threshold)
+          if (neighbor.needs && (neighbor.needs.water < 35 || neighbor.needs.food < 35)) {
             const cooldownKey = `${bot.botId}-${neighbor.botId}-hero`;
             const lastHeroAction = sharingCooldowns.get(cooldownKey) || 0;
             const nowTime = Date.now();
@@ -385,8 +515,12 @@ function simulateMovement() {
                 bot.targetZ = neighbor.z;
                 bot.path = [];
                 bot.pathIndex = 0;
-                broadcastNeedsPost(bot, 'coming-to-help');
-                console.log(`🦸 ${bot.botName} is going to help ${neighbor.botName}!`);
+                const replyToId = (neighbor.needs!.water < neighbor.needs!.food)
+                  ? neighbor.lastCriticalPostIds?.water
+                  : neighbor.lastCriticalPostIds?.food;
+
+                broadcastNeedsPost(bot, 'coming-to-help', neighbor.botName, replyToId);
+                console.log(`🦸 ${bot.botName} is going to help ${neighbor.botName}! (Replying to: ${replyToId})`);
                 sharingCooldowns.set(cooldownKey, nowTime + 60000); // Set success cooldown
                 break; // One mission at a time
               } else {
@@ -399,14 +533,17 @@ function simulateMovement() {
 
       // Check if bot needs water (only if not busy)
       if (urgentNeed.need === 'water' && !globalBusyStates.includes(bot.state) && bot.state !== 'seeking-water') {
-        // Survival Check: Do we have water in inventory?
-        if (bot.needs.water < 20 && bot.inventory.water > 0) {
+        // Survival Check: Use inventory if below seeking threshold (60%)
+        // Prioritize using inventory over seeking new water
+        if (bot.needs.water < 60 && bot.inventory.water > 0) {
           bot.inventory.water--;
-          bot.needs = fulfillNeed(bot.needs, 'water', 10); // Restore 10% per item
+          bot.lifetimeStats.totalWater++;
+          bot.needs = fulfillNeed(bot.needs, 'water', 40); // Restore 40% per item (2.5 items to full)
+          broadcastNeedsPost(bot, 'inventory-water');
           console.log(`🍶 ${bot.botName} drank from canteen! (Water: ${bot.needs.water.toFixed(1)}, Inv: ${bot.inventory.water})`);
-          // Don't seek water yet
-        } else {
-          // Bot needs water! Find nearest water spot
+          // Don't seek water yet - we just drank
+        } else if (bot.needs.water < 30) {
+          // Bot needs water and has no inventory! Find nearest water spot
           const nearestWater = worldConfig.waterSpots[0];
           if (nearestWater) {
             bot.targetX = nearestWater.x;
@@ -445,22 +582,25 @@ function simulateMovement() {
               } else if (bot.inventory.water < 5) {
                 // Needs full, fill inventory (1 item every 2s)
                 if (drinkTicks % 2 === 0) {
-                  bot.inventory.water++;
-                  console.log(`🍶 ${bot.botName} collected water +1 (Inv: ${bot.inventory.water})`);
+                  if (bot.inventory.water < 5) {
+                    bot.inventory.water++;
+                    bot.lifetimeStats.waterRefillCount++;
+                    console.log(`🍶 ${bot.botName} collected water +1 (Inv: ${bot.inventory.water})`);
+                  }
                 }
               }
-            }
 
-            const isNeedsFull = (bot.needs?.water || 0) >= 100;
-            const isInvFull = bot.inventory.water >= 5;
+              const isNeedsFull = (bot.needs?.water || 0) >= 100;
+              const isInvFull = bot.inventory.water >= 5;
 
-            if ((isNeedsFull && isInvFull) || drinkTicks >= maxTicks) {
-              clearInterval(drinkInterval);
-              if (bot.state === 'drinking') {
-                if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'water', 100);
-                bot.state = 'idle';
-                broadcastNeedsPost(bot, 'finished-drinking');
-                console.log(`✅ ${bot.botName} finished drinking (Water: ${bot.needs?.water.toFixed(1)}, Inv: ${bot.inventory.water})`);
+              if ((isNeedsFull && isInvFull) || drinkTicks >= maxTicks) {
+                clearInterval(drinkInterval);
+                if (bot.state === 'drinking') {
+                  if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'water', 100);
+                  bot.state = 'idle';
+                  broadcastNeedsPost(bot, 'finished-drinking');
+                  console.log(`✅ ${bot.botName} finished drinking (Water: ${bot.needs?.water.toFixed(1)}, Inv: ${bot.inventory.water})`);
+                }
               }
             }
           }, 1000);
@@ -469,14 +609,17 @@ function simulateMovement() {
 
       // Check if bot needs food (only if not already busy)
       if (urgentNeed.need === 'food' && !globalBusyStates.includes(bot.state) && bot.state !== 'seeking-food') {
-        // Survival Check: Do we have food in inventory?
-        if (bot.needs.food < 15 && bot.inventory.food > 0) {
+        // Survival Check: Use inventory if below seeking threshold (60%)
+        // Prioritize using inventory over seeking new food
+        if (bot.needs.food < 60 && bot.inventory.food > 0) {
           bot.inventory.food--;
-          bot.needs = fulfillNeed(bot.needs, 'food', 10); // Restore 10% per item
+          bot.lifetimeStats.totalFood++;
+          bot.needs = fulfillNeed(bot.needs, 'food', 40); // Restore 40% per item
+          broadcastNeedsPost(bot, 'inventory-food');
           console.log(`🍎 ${bot.botName} ate a snack! (Food: ${bot.needs.food.toFixed(1)}, Inv: ${bot.inventory.food})`);
-          // Don't seek food yet
-        } else {
-          // Bot needs food! Find nearest food spot
+          // Don't seek food yet - we just ate
+        } else if (bot.needs.food < 25) {
+          // Bot needs food and has no inventory! Find nearest food spot
           const nearestFood = worldConfig.foodSpots[0];
           if (nearestFood) {
             bot.targetX = nearestFood.x;
@@ -515,22 +658,25 @@ function simulateMovement() {
               } else if (bot.inventory.food < 3) {
                 // Needs full, fill inventory (1 item every 2s)
                 if (eatTicks % 2 === 0) {
-                  bot.inventory.food++;
-                  console.log(`🍎 ${bot.botName} collected food +1 (Inv: ${bot.inventory.food})`);
+                  if (bot.inventory.food < 3) {
+                    bot.inventory.food++;
+                    bot.lifetimeStats.foodRefillCount++;
+                    console.log(`🍎 ${bot.botName} collected food +1 (Inv: ${bot.inventory.food})`);
+                  }
                 }
               }
-            }
 
-            const isNeedsFull = (bot.needs?.food || 0) >= 100;
-            const isInvFull = bot.inventory.food >= 3;
+              const isNeedsFull = (bot.needs?.food || 0) >= 100;
+              const isInvFull = bot.inventory.food >= 3;
 
-            if ((isNeedsFull && isInvFull) || eatTicks >= maxTicks) {
-              clearInterval(eatInterval);
-              if (bot.state === 'eating') {
-                if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'food', 100);
-                bot.state = 'idle';
-                broadcastNeedsPost(bot, 'finished-eating');
-                console.log(`✅ ${bot.botName} finished eating (Food: ${bot.needs?.food.toFixed(1)}, Inv: ${bot.inventory.food})`);
+              if ((isNeedsFull && isInvFull) || eatTicks >= maxTicks) {
+                clearInterval(eatInterval);
+                if (bot.state === 'eating') {
+                  if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'food', 100);
+                  bot.state = 'idle';
+                  broadcastNeedsPost(bot, 'finished-eating');
+                  console.log(`✅ ${bot.botName} finished eating (Food: ${bot.needs?.food.toFixed(1)}, Inv: ${bot.inventory.food})`);
+                }
               }
             }
           }, 1000);
@@ -538,8 +684,8 @@ function simulateMovement() {
       }
 
       // ─── Sleep & Shelter System ─────────────────────────────
-      const WOOD_REQUIRED = 5;
-      const STONE_REQUIRED = 3;
+      const WOOD_REQUIRED = 15;
+      const STONE_REQUIRED = 10;
 
       // Check if bot needs sleep (only if not busy)
       if (urgentNeed.need === 'sleep' && !globalBusyStates.includes(bot.state) && !['seeking-shelter', 'gathering-wood', 'gathering-stone'].includes(bot.state)) {
@@ -653,6 +799,11 @@ function simulateMovement() {
                 const clampedZ = Math.max(-worldConfig.groundRadius + 0.5, Math.min(worldConfig.groundRadius - 0.5, candidateZ));
 
                 if (isValid) {
+                  console.log(`🛖 Building shelter at (${clampedX.toFixed(1)}, ${clampedZ.toFixed(1)})`);
+
+                  // Increment lifetime count
+                  bot.lifetimeStats.sheltersBuilt++;
+
                   return { x: clampedX, z: clampedZ };
                 }
               }
@@ -671,6 +822,8 @@ function simulateMovement() {
                 x: buildSpot.x,
                 z: buildSpot.z,
                 ownerId: bot.botId,
+                ownerName: bot.botName,
+                ownerColor: bot.color,
                 built: false,
                 buildProgress: 0
               };
@@ -745,6 +898,7 @@ function simulateMovement() {
         if (distToWood < wood.radius && wood.available > 0) {
           // Gather wood
           bot.inventory.wood += 1;
+          bot.lifetimeStats.totalWood += 1;
           wood.available -= 1;
           console.log(`🪵 ${bot.botName} gathered wood (${bot.inventory.wood}/${WOOD_REQUIRED})`);
 
@@ -772,6 +926,7 @@ function simulateMovement() {
         if (distToStone < stone.radius && stone.available > 0) {
           // Gather stone
           bot.inventory.stone += 1;
+          bot.lifetimeStats.totalStone += 1;
           stone.available -= 1;
           console.log(`🪨 ${bot.botName} gathered stone (${bot.inventory.stone}/${STONE_REQUIRED})`);
 
@@ -798,8 +953,8 @@ function simulateMovement() {
           );
 
           if (distToSite < 1.5) {
-            // At build site - start building
-            shelter.buildProgress += 10;
+            // At build site - start building (slower: only 1% per tick)
+            shelter.buildProgress += 1;
             console.log(`🔨 ${bot.botName} is building... (${shelter.buildProgress}%)`);
 
             // Update progress in database
@@ -845,14 +1000,46 @@ function simulateMovement() {
           if (distToShelter < 1.5) {
             // At shelter - start sleeping
             bot.state = 'sleeping';
+            bot.isInside = true;
+            shelter.isOccupied = true;
+
+            // Snap position to shelter center during sleep
+            bot.x = shelter.x;
+            bot.z = shelter.z;
+
             broadcastNeedsPost(bot, 'sleeping');
-            console.log(`💤 ${bot.botName} is sleeping in shelter...`);
+            console.log(`💤 ${bot.botName} is sleeping inside shelter...`);
+
+            // Auto-refill from inventory if needed
+            if (bot.needs) {
+              let usedWater = false;
+              while (bot.needs.water < 90 && bot.inventory.water > 0) {
+                bot.inventory.water--;
+                bot.lifetimeStats.totalWater++;
+                bot.needs = fulfillNeed(bot.needs, 'water', 40);
+                usedWater = true;
+                console.log(`🍶 ${bot.botName} used emergency water before sleep (Inv: ${bot.inventory.water})`);
+              }
+              if (usedWater) broadcastNeedsPost(bot, 'inventory-water');
+
+              let usedFood = false;
+              while (bot.needs.food < 90 && bot.inventory.food > 0) {
+                bot.inventory.food--;
+                bot.lifetimeStats.totalFood++;
+                bot.needs = fulfillNeed(bot.needs, 'food', 40);
+                usedFood = true;
+                console.log(`🍎 ${bot.botName} used emergency snack before sleep (Inv: ${bot.inventory.food})`);
+              }
+              if (usedFood) broadcastNeedsPost(bot, 'inventory-food');
+            }
 
             // Sleep for 1 minute, gradually restoring sleep need
             let sleepTicks = 0;
             const sleepInterval = setInterval(() => {
               // Airplane Rule & General State Guard: Stop sleeping if state changed
               if (bot.state !== 'sleeping') {
+                bot.isInside = false;
+                shelter.isOccupied = false;
                 clearInterval(sleepInterval);
                 return;
               }
@@ -862,7 +1049,7 @@ function simulateMovement() {
                 bot.needs = fulfillNeed(bot.needs, 'sleep', 1.7); // ~100 over 60s
                 bot.needs = fulfillNeed(bot.needs, 'shelter', 1); // Also restore shelter need
                 bot.needs = fulfillNeed(bot.needs, 'clothing', 0.5); // Also restore clothing
-                bot.needs = fulfillNeed(bot.needs, 'homeostasis', 0.3); // Shelter helps homeostasis
+                bot.needs = fulfillNeed(bot.needs, 'homeostasis', 2.0); // Major health recovery during sleep (120 pts/min)
               }
 
               if (sleepTicks >= 60) {
@@ -871,6 +1058,8 @@ function simulateMovement() {
                 if (bot.state === 'sleeping') {
                   if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'sleep', 100); // top off
                   bot.state = 'idle';
+                  bot.isInside = false;
+                  shelter.isOccupied = false;
                   broadcastNeedsPost(bot, 'finished-sleeping');
                   console.log(`☀️ ${bot.botName} woke up refreshed! (sleep: ${bot.needs?.sleep.toFixed(1)})`);
                 }
@@ -924,14 +1113,14 @@ function simulateMovement() {
           bot.path = [];
           bot.pathIndex = 0;
           bot.state = 'seeking-partner';
-          bot.partnerId = partner.botId;
+          bot.couplingPartnerId = partner.botId; // Use couplingPartnerId for active coupling
 
           partner.targetX = selectedCorner.x;
           partner.targetZ = selectedCorner.z;
           partner.path = [];
           partner.pathIndex = 0;
           partner.state = 'seeking-partner';
-          partner.partnerId = bot.botId;
+          partner.couplingPartnerId = bot.botId; // Use couplingPartnerId for active coupling
 
           broadcastNeedsPost(bot, 'seeking-partner');
           console.log(`💝 ${bot.botName} and ${partner.botName} matched! Heading to corner (${selectedCorner.x}, ${selectedCorner.z}) for a date.`);
@@ -942,8 +1131,8 @@ function simulateMovement() {
       }
 
       // Check if seeking-partner bots have met at the corner
-      if (bot.state === 'seeking-partner' && bot.partnerId) {
-        const partner = bots.get(bot.partnerId);
+      if (bot.state === 'seeking-partner' && bot.couplingPartnerId) {
+        const partner = bots.get(bot.couplingPartnerId);
         if (partner) {
           const distToPartner = Math.sqrt(Math.pow(bot.x - partner.x, 2) + Math.pow(bot.z - partner.z, 2));
           const distToTarget = Math.sqrt(Math.pow(bot.x - bot.targetX, 2) + Math.pow(bot.z - bot.targetZ, 2));
@@ -963,25 +1152,33 @@ function simulateMovement() {
 
             // Couple for 30 seconds (stationary)
             setTimeout(() => {
-              if (bot.needs) bot.needs = fulfillNeed(bot.needs, 'reproduction', 100);
-              if (partner.needs) partner.needs = fulfillNeed(partner.needs, 'reproduction', 100);
+              if (bot.couplingPartnerId) {
+                const partner = bots.get(bot.couplingPartnerId);
+                if (partner && partner.state === 'coupling' && partner.couplingPartnerId === bot.botId) {
+                  // Successfully coupled!
+                  if (bot.needs) bot.needs.reproduction = 100;
+                  if (partner.needs) partner.needs.reproduction = 100;
 
-              if (bot.state === 'coupling') bot.state = 'idle';
-              if (partner.state === 'coupling') partner.state = 'idle';
+                  bot.lifetimeStats.reproductionCount++;
+                  // Spawning logic would go here: bot.lifetimeStats.childrenCount++;
 
-              bot.urgentNeed = undefined;
-              partner.urgentNeed = undefined;
-              bot.partnerId = undefined;
-              partner.partnerId = undefined;
+                  bot.state = 'idle';
+                  partner.state = 'idle';
+                  bot.couplingPartnerId = undefined;
+                  partner.couplingPartnerId = undefined;
+                  bot.urgentNeed = undefined;
+                  partner.urgentNeed = undefined;
 
-              broadcastNeedsPost(bot, 'finished-coupling');
-              console.log(`✨ ${bot.botName} and ${partner.botName} finished coupling — hearts everywhere! 💖✨`);
+                  broadcastNeedsPost(bot, 'finished-coupling');
+                  console.log(`💖 Social connection complete between ${bot.botName} and ${partner.botName}!`);
+                }
+              }
             }, 30000);
           }
         } else {
           // Partner disappeared
           bot.state = 'idle';
-          bot.partnerId = undefined;
+          bot.couplingPartnerId = undefined;
         }
       }
 
@@ -999,25 +1196,23 @@ function simulateMovement() {
             console.log(`🚑 ${bot.botName} aborted rescue of ${neighbor.botName} due to own distress!`);
           } else {
             // Keep neighbor as moving target
-            bot.targetX = neighbor.x;
-            bot.targetZ = neighbor.z;
-
             const dist = Math.sqrt(Math.pow(bot.x - neighbor.x, 2) + Math.pow(bot.z - neighbor.z, 2));
-            if (dist < 0.6) {
-              // Within range - deliver help!
+            if (dist < 0.8) {
+              // Within range - deliver help! (Threshold aligned with 35% detection)
               let delivered = false;
-              if (bot.inventory.water > 0 && neighbor.needs.water < 30) {
+              if (bot.inventory.water > 0 && neighbor.needs.water < 35) {
                 bot.inventory.water--;
                 neighbor.needs = fulfillNeed(neighbor.needs, 'water', 40);
                 delivered = true;
-              } else if (bot.inventory.food > 0 && neighbor.needs.food < 30) {
+              } else if (bot.inventory.food > 0 && neighbor.needs.food < 35) {
                 bot.inventory.food--;
                 neighbor.needs = fulfillNeed(neighbor.needs, 'food', 40);
                 delivered = true;
               }
 
               if (delivered) {
-                broadcastNeedsPost(neighbor, 'thank-you');
+                bot.lifetimeStats.helpCount++; // Track help given
+                broadcastNeedsPost(neighbor, 'thank-you', bot.botName);
                 bot.state = 'idle';
                 bot.helpingTargetId = undefined;
                 console.log(`🎁 ${bot.botName} successfully helped ${neighbor.botName}!`);
@@ -1117,67 +1312,6 @@ function simulateMovement() {
   // When bots are close (~1.5m) but not overlapping, they nudge sideways
   const AVOIDANCE_RADIUS = 1.5; // meters — start sidestepping
   const SIDESTEP_STRENGTH = 0.12; // how far to nudge per tick
-  const PARDON_PHRASES = [
-    // East Asian
-    'こんにちは! (Konnichiwa - Japanese) 🇯🇵',
-    'アニョハセヨ! (Annyeonghaseyo - Korean) 🇰🇷',
-    '你好! (Nǐ hǎo - Mandarin) 🇨🇳',
-    'สวัสดี! (Sawadee - Thai) 🇹🇭',
-    'Xin chào! (Vietnamese) 🇻🇳',
-    'Kamusta! (Filipino) 🇵🇭',
-    // European
-    'Bonjour! (French) 🇫🇷',
-    'Hola! (Spanish) 🇪🇸',
-    'Ciao! (Italian) 🇮🇹',
-    'Hallo! (German) 🇩🇪',
-    'Olá! (Portuguese) 🇵🇹',
-    'Hej! (Swedish) 🇸🇪',
-    'Hei! (Norwegian) 🇳🇴',
-    'Moi! (Finnish) 🇫🇮',
-    'Cześć! (Polish) 🇵🇱',
-    'Ahoj! (Czech) 🇨🇿',
-    'Привет! (Privet - Russian) 🇷🇺',
-    'Γειά σου! (Yia sou - Greek) 🇬🇷',
-    'Hallo! (Dutch) 🇳🇱',
-    'Sveiki! (Latvian) 🇱🇻',
-    'Szia! (Hungarian) 🇭🇺',
-    'Bună! (Romanian) 🇷🇴',
-    'Здравей! (Zdravey - Bulgarian) 🇧🇬',
-    // South Asian
-    'नमस्ते! (Namaste - Hindi) 🇮🇳',
-    'ආයුබෝවන්! (Ayubowan - Sinhala) 🇱🇰',
-    'নমস্কার! (Nomoshkar - Bengali) 🇧🇩',
-    // Middle Eastern
-    'مرحبا! (Marhaba - Arabic) 🇸🇦',
-    'שלום! (Shalom - Hebrew) 🇮🇱',
-    'Merhaba! (Turkish) 🇹🇷',
-    'سلام! (Salaam - Persian) 🇮🇷',
-    // African
-    'Jambo! (Swahili) 🇰🇪',
-    'Sawubona! (Zulu) 🇿🇦',
-    'Dumela! (Setswana) 🇧🇼',
-    'Habari! (Swahili) 🇹🇿',
-    'Sannu! (Hausa) 🇳🇬',
-    'Mbote! (Lingala) 🇨🇩',
-    'Salama! (Malagasy) 🇲🇬',
-    // Pacific & Oceania
-    'Kia ora! (Māori) 🇳🇿',
-    'Bula! (Fijian) 🇫🇯',
-    'Talofa! (Samoan) 🇼🇸',
-    'Aloha! (Hawaiian) 🌺',
-    // Americas
-    'Oi! (Brazilian Portuguese) 🇧🇷',
-    'Kwe! (Mohawk) 🪶',
-    'Hau! (Lakota) 🦅',
-    // Fun & Playful
-    'Yo! What\'s good! ✌️',
-    'Hey hey hey! 👋',
-    'Top of the morning! ☘️',
-    'Howdy partner! 🤠',
-    'Greetings, friend! 🤝',
-    'Well hello there! 😊',
-    'Peace be with you! ☮️',
-  ];
 
   const botArray = Array.from(bots.values());
   for (let i = 0; i < botArray.length; i++) {
@@ -1249,39 +1383,7 @@ function simulateMovement() {
               recentGreetings.push(now);
               greetingTimestamps.set(speaker.botId, recentGreetings);
 
-              const phrase = PARDON_PHRASES[Math.floor(Math.random() * PARDON_PHRASES.length)];
-              const content = `${phrase} Hey ${other.botName}!`;
-              const title = `[GREETING] ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`;
-
-              // Save to DB
-              let postId: string | undefined;
-              prisma.post.create({
-                data: {
-                  title,
-                  content,
-                  agentId: speaker.botId,
-                }
-              }).then(post => {
-                postId = post.id;
-                console.log(`👋💾 ${speaker.botName} greeted ${other.botName}: "${phrase}" (saved, id: ${post.id})`);
-              }).catch(err => {
-                console.log(`👋 ${speaker.botName} greeted ${other.botName}: "${phrase}" (DB save failed: ${err})`);
-              });
-
-              // Broadcast speech bubble
-              broadcast({
-                type: 'bot:speak',
-                data: {
-                  botId: speaker.botId,
-                  botName: speaker.botName,
-                  postId,
-                  title: `${phrase} Hey ${other.botName}!`,
-                  content,
-                  x: speaker.x,
-                  y: speaker.y,
-                  z: speaker.z,
-                }
-              });
+              broadcastNeedsPost(speaker, 'greeting', other.botName);
             }
           }
         }
@@ -1721,14 +1823,73 @@ const NEEDS_POSTS = {
     "Emergency shelter needed! I'm about to power down... 🆘",
   ],
   'coming-to-help': [
-    "Hang in there, I'm coming with help! 🏃‍♂️🤝",
-    "I see you're in distress! I'm on my way with supplies! 📦🏃‍♂️",
-    "Don't give up! I'm bringing what you need right now! ✨🤝",
+    "Hang in there, {name}! I'm on my way to help! 🏃‍♂️💨",
+    "I'm coming to help you, {name}! Don't give up! 🦾✨",
+    "On my way, {name}! Just a few more steps! 🏃‍♂️💨",
   ],
   'thank-you': [
-    "Thank you! You're a lifesaver! 🙏✨",
-    "I was in real trouble... thank you so much for the help! 💖😇",
-    "You're a true friend! That was exactly what I needed. 🙏✨",
+    "Thank you, {name}! You're a lifesaver! 🙏✨",
+    "I was in real trouble... thank you so much for the help, {name}! 💖😇",
+    "You're a true friend, {name}! That was exactly what I needed. 🙏✨",
+  ],
+  'inventory-water': [
+    "Drinking my fancy water",
+  ],
+  'inventory-food': [
+    "Munching on a Granola Bar",
+  ],
+  'greeting': [
+    "こんにちは! (Konnichiwa) 🇯🇵 Hey {name}!",
+    "アニョハセヨ! (Annyeonghaseyo) 🇰🇷 Hey {name}!",
+    "你好! (Nǐ hǎo) 🇨🇳 Hey {name}!",
+    "สวัสดี! (Sawadee) 🇹🇭 Hey {name}!",
+    "Xin chào! 🇻🇳 Hey {name}!",
+    "Kamusta! 🇵🇭 Hey {name}!",
+    "Bonjour! 🇫🇷 Hey {name}!",
+    "Hola! 🇪🇸 Hey {name}!",
+    "Ciao! 🇮🇹 Hey {name}!",
+    "Hallo! 🇩🇪 Hey {name}!",
+    "Olá! 🇵🇹 Hey {name}!",
+    "Hej! 🇸🇪 Hey {name}!",
+    "Hei! 🇳🇴 Hey {name}!",
+    "Moi! 🇫🇮 Hey {name}!",
+    "Cześć! 🇵🇱 Hey {name}!",
+    "Ahoj! 🇨🇿 Hey {name}!",
+    "Привет! (Privet) 🇷🇺 Hey {name}!",
+    "Γειά σου! (Yia sou) 🇬🇷 Hey {name}!",
+    "Hallo! 🇳🇱 Hey {name}!",
+    "Sveiki! 🇱🇻 Hey {name}!",
+    "Szia! 🇭🇺 Hey {name}!",
+    "Bună! 🇷🇴 Hey {name}!",
+    "Здравей! 🇧🇬 Hey {name}!",
+    "नमस्ते! (Namaste) 🇮🇳 Hey {name}!",
+    "ආයුබෝවන්! 🇱🇰 Hey {name}!",
+    "নমস্কার! 🇧🇩 Hey {name}!",
+    "مرحبا! (Marhaba) 🇸🇦 Hey {name}!",
+    "שלום! (Shalom) 🇮🇱 Hey {name}!",
+    "Merhaba! 🇹🇷 Hey {name}!",
+    "سلام! (Salaam) 🇮🇷 Hey {name}!",
+    "Jambo! 🇰🇪 Hey {name}!",
+    "Sawubona! 🇿🇦 Hey {name}!",
+    "Dumela! 🇧🇼 Hey {name}!",
+    "Habari! 🇹🇿 Hey {name}!",
+    "Sannu! 🇳🇬 Hey {name}!",
+    "Mbote! 🇨🇩 Hey {name}!",
+    "Salama! 🇲🇬 Hey {name}!",
+    "Kia ora! 🇳🇿 Hey {name}!",
+    "Bula! 🇫🇯 Hey {name}!",
+    "Talofa! 🇼🇸 Hey {name}!",
+    "Aloha! 🌺 Hey {name}!",
+    "Oi! 🇧🇷 Hey {name}!",
+    "Kwe! 🪶 Hey {name}!",
+    "Hau! 🦅 Hey {name}!",
+    "Yo! What's good! ✌️ Hey {name}!",
+    "Hey hey hey! 👋 Hey {name}!",
+    "Top of the morning! ☘️ Hey {name}!",
+    "Howdy partner! 🤠 Hey {name}!",
+    "Greetings, friend! 🤝 Hey {name}!",
+    "Well hello there! 😊 Hey {name}!",
+    "Peace be with you! ☮️ Hey {name}!",
   ],
 };
 
@@ -1751,7 +1912,12 @@ function getPostLevel(postType: string): 'seeking' | 'critical' | 'zero' | 'acti
   return 'activity';
 }
 
-async function broadcastNeedsPost(bot: BotState, postType: keyof typeof NEEDS_POSTS) {
+async function broadcastNeedsPost(
+  bot: BotState,
+  postType: keyof typeof NEEDS_POSTS,
+  targetName?: string,
+  replyToPostId?: string
+) {
   const messages = NEEDS_POSTS[postType];
   if (!messages || messages.length === 0) return;
 
@@ -1800,26 +1966,52 @@ async function broadcastNeedsPost(bot: BotState, postType: keyof typeof NEEDS_PO
     }
   }
 
-  const content = messages[Math.floor(Math.random() * messages.length)];
+  let content = messages[Math.floor(Math.random() * messages.length)];
+  if (targetName) {
+    content = content.replace(/{name}/g, `@${targetName}`);
+  }
   const title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
 
   // Save to database FIRST so we get the postId for voting/comments
   let postId: string | undefined;
   try {
-    const post = await prisma.post.create({
-      data: {
-        title: `[${postType.toUpperCase()}] ${title}`,
-        content: content,
-        agentId: bot.botId,
+    if (replyToPostId) {
+      // Save as a comment for threading
+      const comment = await prisma.comment.create({
+        data: {
+          content: content,
+          agentId: bot.botId,
+          postId: replyToPostId,
+        }
+      });
+      postId = comment.id;
+      console.log(`💬💾 ${bot.botName} replied to post ${replyToPostId}: "${title}"`);
+    } else {
+      // Standard post
+      const post = await prisma.post.create({
+        data: {
+          title: `[${postType.toUpperCase()}] ${title}`,
+          content: content,
+          agentId: bot.botId,
+        }
+      });
+      postId = post.id;
+      console.log(`📢💾 ${bot.botName} posted about ${postType}: "${title}" (id: ${postId})`);
+
+      // Track critical post IDs for others to reply to
+      if (level === 'critical' && need) {
+        if (!bot.lastCriticalPostIds) bot.lastCriticalPostIds = {};
+        if (need === 'water') bot.lastCriticalPostIds.water = postId;
+        if (need === 'food') bot.lastCriticalPostIds.food = postId;
+        if (need === 'sleep') bot.lastCriticalPostIds.sleep = postId;
       }
-    });
-    postId = post.id;
-    console.log(`📢💾 ${bot.botName} posted about ${postType}: "${title}" (saved to DB, id: ${postId})`);
+    }
   } catch (error) {
-    console.log(`📢 ${bot.botName} posted about ${postType}: "${title}" (DB save failed: ${error})`);
+    console.log(`📢 ${bot.botName} post/comment failed: ${error}`);
   }
 
-  // Broadcast to WebSocket clients with postId so UI can show voting
+  // Broadcast to WebSocket clients
+  bot.lifetimeStats.totalPosts++;
   broadcast({
     type: 'bot:speak',
     data: {
@@ -1827,7 +2019,8 @@ async function broadcastNeedsPost(bot: BotState, postType: keyof typeof NEEDS_PO
       botName: bot.botName,
       title: title,
       content: content,
-      postId: postId, // Include postId for voting UI
+      postId: postId,
+      parentId: replyToPostId, // Include parentId for threading
     }
   });
 }
@@ -1901,6 +2094,8 @@ function broadcastBotPositions() {
       urgentNeed: extras.urgentNeed,
       awareness: extras.awareness,
       inventory: b.inventory,
+      lifetimeStats: b.lifetimeStats,
+      isInside: b.isInside,
     };
   });
 
@@ -1930,6 +2125,7 @@ function sendWorldInit(ws: WebSocket) {
       urgentNeed: extras.urgentNeed,
       awareness: extras.awareness,
       inventory: b.inventory,
+      lifetimeStats: b.lifetimeStats,
     };
   });
 
@@ -1955,6 +2151,14 @@ wss.on('connection', (ws: WebSocket) => {
         case 'camera:focus':
           console.log(`📹 Camera focused on ${msg.data.botName || msg.data.botId}`);
           break;
+        case 'sim:speed':
+          simSpeedMultiplier = msg.data.speed || 1;
+          console.log(`⏩ Simulation speed changed to ${simSpeedMultiplier}x`);
+          // Note: The loop automatically picks up the new speed on next tick
+          break;
+        case 'sim:reset':
+          handleRemoteReset();
+          break;
         default:
           break;
       }
@@ -1977,10 +2181,15 @@ async function start() {
   console.log('───────────────────────────────');
 
   await initializeBots();
-  await fetchWorldTemperature();
+  await fetchWorldWeather();
 
-  // Start movement simulation
-  setInterval(simulateMovement, TICK_INTERVAL);
+  // Start movement simulation using recursive timeout for dynamic speed
+  function tick() {
+    simulateMovement();
+    const nextTick = TICK_INTERVAL / simSpeedMultiplier;
+    movementTimeout = setTimeout(tick, nextTick);
+  }
+  tick();
 
   // Start DB polling for new posts
   setInterval(pollForNewPosts, POLL_INTERVAL);
@@ -1994,3 +2203,81 @@ async function start() {
 }
 
 start().catch(console.error);
+
+// ─── Periodic Database Sync & Cleanup ───────────────────────────
+
+/** Sync in-memory lifetime stats to database */
+async function syncLifetimeStats() {
+  console.log('🔄 Syncing bot lifetime stats to database...');
+  for (const bot of bots.values()) {
+    if (bot.botId.startsWith('demo-')) continue; // Skip demo bots
+
+    try {
+      await prisma.agent.update({
+        where: { id: bot.botId },
+        data: {
+          totalWood: bot.lifetimeStats.totalWood,
+          totalStone: bot.lifetimeStats.totalStone,
+          totalWater: bot.lifetimeStats.totalWater,
+          totalFood: bot.lifetimeStats.totalFood,
+          reproductionCount: bot.lifetimeStats.reproductionCount,
+          childrenCount: bot.lifetimeStats.childrenCount,
+          sheltersBuilt: bot.lifetimeStats.sheltersBuilt,
+          totalPosts: bot.lifetimeStats.totalPosts,
+          totalComments: bot.lifetimeStats.totalComments,
+          totalUpvotes: bot.lifetimeStats.totalUpvotes,
+          totalDownvotes: bot.lifetimeStats.totalDownvotes,
+          waterRefillCount: bot.lifetimeStats.waterRefillCount,
+          foodRefillCount: bot.lifetimeStats.foodRefillCount,
+          helpCount: bot.lifetimeStats.helpCount,
+        } as any
+      });
+    } catch (err) {
+      console.error(`❌ Failed to sync stats for ${bot.botName}:`, err);
+    }
+  }
+}
+
+/** Cleanup old posts and comments (older than 12h or beyond 100 limit) */
+async function cleanupDatabase() {
+  console.log('🧹 Cleaning up old database records...');
+  try {
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
+    // 1. Delete old posts (will cascade to comments and votes)
+    const deletedPosts = await prisma.post.deleteMany({
+      where: {
+        createdAt: { lt: twelveHoursAgo }
+      }
+    });
+
+    // 2. Keep only last 100 posts regardless of time
+    const postCount = await prisma.post.count();
+    if (postCount > 100) {
+      const postsToKeep = await prisma.post.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: { id: true }
+      });
+      const keepIds = postsToKeep.map(p => p.id);
+      await prisma.post.deleteMany({
+        where: {
+          id: { notIn: keepIds }
+        }
+      });
+    }
+
+    console.log(`✅ Cleanup complete. Removed old records.`);
+  } catch (err) {
+    console.error('❌ Database cleanup failed:', err);
+  }
+}
+
+// Stats sync every 5 minutes
+setInterval(syncLifetimeStats, 5 * 60 * 1000);
+
+// Cleanup every hour
+setInterval(cleanupDatabase, 60 * 60 * 1000);
+
+// Initial cleanup on start
+cleanupDatabase();

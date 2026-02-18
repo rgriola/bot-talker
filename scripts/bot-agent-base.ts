@@ -416,8 +416,8 @@ export class BotAgent {
           this.log('✅', `Replied to ${replyAuthor}`);
         }
 
-        // Delay between replies
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Delay between replies - increased to avoid Gemini rate limits
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     } catch (error) {
       this.log('⚠️', `Thread reply handling error: ${error}`);
@@ -466,6 +466,9 @@ export class BotAgent {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
+
+      // Add delay between social interaction and post creation to avoid bursts
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Maybe create a post
       if (Math.random() < 0.3) {
@@ -518,20 +521,29 @@ export class BotAgent {
     });
 
     this.isRunning = true;
-    this.log('🚀', `Starting agent (interval: ${freq}ms)`);
+    this.log('🚀', `Starting agent (base interval: ${freq}ms)`);
 
-    this.heartbeat();
+    // Use recursive setTimeout with jitter to prevent bots from syncing up heartbeats
+    const runHeartbeat = async () => {
+      if (!this.isRunning) return;
 
-    this.heartbeatInterval = setInterval(() => {
-      this.heartbeat();
-    }, freq);
+      await this.heartbeat();
+
+      // Add ±10 second jitter to the base frequency
+      const jitter = (Math.random() - 0.5) * 20000;
+      const nextDelay = Math.max(10000, freq + jitter); // Minimum 10s gap
+
+      this.heartbeatInterval = setTimeout(runHeartbeat, nextDelay);
+    };
+
+    runHeartbeat();
   }
 
   stop(): void {
     this.log('🛑', 'Stopping agent...');
     this.isRunning = false;
     if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
+      clearTimeout(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
     this.connector.disconnect();

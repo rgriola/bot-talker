@@ -16,9 +16,11 @@ export interface BotMetricsPanelProps {
   showFeed: boolean;
   /** Callback to close the panel */
   onClose: () => void;
+  /** Whether physical needs are visible */
+  showPhysicalNeeds: boolean;
+  /** Callback to toggle physical needs */
+  onToggleNeeds: () => void;
 }
-
-
 
 /**
  * Bot metrics panel showing identity, stats, and physical needs for selected bot.
@@ -29,6 +31,8 @@ export function BotMetricsPanel({
   selectedBotInfo,
   showFeed,
   onClose,
+  showPhysicalNeeds,
+  onToggleNeeds,
 }: BotMetricsPanelProps) {
   const botColorAdjusted = ensureContrastRatio(selectedBotInfo.color, uiTheme.panelBgHex, 3.0);
   const botColorText = ensureContrastRatio(selectedBotInfo.color, uiTheme.panelBgHex, 4.5);
@@ -50,6 +54,8 @@ export function BotMetricsPanel({
         padding: '14px 16px',
         boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
         transition: 'left 0.3s, background 0.5s, border-color 0.5s',
+        maxHeight: 'calc(100vh - 130px)',
+        overflowY: 'auto',
       }}
     >
       {/* Header */}
@@ -104,6 +110,32 @@ export function BotMetricsPanel({
         </div>
       </div>
 
+      {/* Controls */}
+      <div style={{ marginBottom: '16px' }}>
+        <button
+          onClick={onToggleNeeds}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: showPhysicalNeeds ? 'rgba(74, 158, 255, 0.2)' : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${showPhysicalNeeds ? 'rgba(74, 158, 255, 0.4)' : uiTheme.borderColor}`,
+            borderRadius: '8px',
+            color: showPhysicalNeeds ? '#4a9eff' : uiTheme.textPrimary,
+            fontSize: '12px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'all 0.2s',
+          }}
+        >
+          <span>{showPhysicalNeeds ? '📖' : '📕'}</span>
+          {showPhysicalNeeds ? 'Hide Physical Needs' : 'Show Physical Needs'}
+        </button>
+      </div>
+
       {/* Stats Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
         <div style={{
@@ -153,22 +185,41 @@ export function BotMetricsPanel({
         </div>
       </div>
 
-      {/* Last Active */}
-      {selectedBotInfo.lastPostTime && (
+      {/* Lifetime Metrics Section */}
+      {selectedBotInfo.lifetimeStats && (
         <div style={{
-          padding: '8px 10px',
+          padding: '12px',
           background: 'rgba(255,255,255,0.03)',
-          borderRadius: '8px',
-          fontSize: '11px',
-          color: uiTheme.textSecondary,
-          marginBottom: '10px',
+          borderRadius: '10px',
+          marginBottom: '12px',
+          border: `1px solid ${uiTheme.borderColor}`,
         }}>
-          <span style={{ opacity: 0.7 }}>Last active:</span>{' '}
-          <span style={{ color: uiTheme.textSecondary, fontWeight: 500 }}>{selectedBotInfo.lastPostTime}</span>
+          <div style={{
+            color: uiTheme.textSecondary,
+            fontSize: '10px',
+            letterSpacing: '1px',
+            textTransform: 'uppercase' as const,
+            marginBottom: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            📜 Lifetime Metrics
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <MetricItem label="Wood Gathered" value={selectedBotInfo.lifetimeStats.totalWood} emoji="🌲" uiTheme={uiTheme} />
+            <MetricItem label="Stone Mined" value={selectedBotInfo.lifetimeStats.totalStone} emoji="🪨" uiTheme={uiTheme} />
+            <MetricItem label="Water Drank" value={selectedBotInfo.lifetimeStats.totalWater} emoji="💧" uiTheme={uiTheme} />
+            <MetricItem label="Food Eaten" value={selectedBotInfo.lifetimeStats.totalFood} emoji="🍎" uiTheme={uiTheme} />
+            <MetricItem label="Reproduction" value={selectedBotInfo.lifetimeStats.reproductionCount} emoji="💝" uiTheme={uiTheme} />
+            <MetricItem label="Children" value={selectedBotInfo.lifetimeStats.childrenCount} emoji="👶" uiTheme={uiTheme} />
+            <MetricItem label="Shelters Built" value={selectedBotInfo.lifetimeStats.sheltersBuilt} emoji="🛖" uiTheme={uiTheme} />
+            <MetricItem label="Total Help" value={selectedBotInfo.lifetimeStats.helpCount} emoji="🦸" uiTheme={uiTheme} />
+          </div>
         </div>
       )}
 
-      {/* Awareness — nearby bots */}
+      {/* Persistence Awareness — nearby bots */}
       {selectedBotInfo.awareness && selectedBotInfo.awareness.length > 0 && (
         <div style={{
           padding: '12px',
@@ -233,6 +284,26 @@ export function BotMetricsPanel({
         borderTop: `1px solid ${uiTheme.borderColor}`,
       }}>
         ID: {selectedBotInfo.botId.substring(0, 12)}...
+      </div>
+    </div>
+  );
+}
+
+function MetricItem({ label, value, emoji, uiTheme }: { label: string, value: number, emoji: string, uiTheme: UiTheme }) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '6px 8px',
+      background: 'rgba(255,255,255,0.02)',
+      borderRadius: '6px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+        <span style={{ fontSize: '10px' }}>{emoji}</span>
+        <span style={{ color: uiTheme.textMuted, fontSize: '9px', fontWeight: 500 }}>{label}</span>
+      </div>
+      <div style={{ color: uiTheme.textPrimary, fontSize: '12px', fontWeight: 700 }}>
+        {value || 0}
       </div>
     </div>
   );

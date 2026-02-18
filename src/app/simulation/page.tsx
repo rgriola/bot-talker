@@ -47,6 +47,7 @@ import {
   BotMetricsPanel,
   AirQualityPanel,
   PhysicalNeedsPanel,
+  WeatherStatsPanel,
 } from '@/components/simulation';
 
 export default function SimulationPage() {
@@ -81,6 +82,7 @@ export default function SimulationPage() {
   const weather = useWeather({ location });
   const [showAirQuality, setShowAirQuality] = useState(false);
   const [showPhysicalNeeds, setShowPhysicalNeeds] = useState(false);
+  const [simSpeed, setSimSpeed] = useState(1);
   // Particle system refs for weather effects
   const rainParticlesRef = useRef<THREE.Points | null>(null);
   const cloudParticlesRef = useRef<THREE.Points | null>(null);
@@ -116,6 +118,39 @@ export default function SimulationPage() {
       );
     }
   }, []);
+
+  // ─── Simulation Controls (Speed & Reset) ───────────────────
+  const setSpeed = useCallback((speed: number) => {
+    setSimSpeed(speed);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'sim:speed', data: { speed } }));
+    }
+  }, []);
+
+  const fullReset = useCallback(() => {
+    if (confirm('🚨 Are you sure? This will WIPE ALL DATA and restart the simulation!')) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'sim:reset' }));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key.toLowerCase() === 'q') {
+        setSimSpeed(current => {
+          const next = current === 1 ? 2 : current === 2 ? 4 : 1;
+          setSpeed(next);
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setSpeed]);
 
   // Weather data is now fetched via the useWeather hook above
 
@@ -396,6 +431,12 @@ export default function SimulationPage() {
       wsRef.current.close();
     }
   }, []);
+
+  // Handle remote reset completion from bridge
+  const onSimResetComplete = useCallback(() => {
+    console.log('🔄 Simulation reset acknowledged by bridge. Cleaning local state...');
+    handleReset();
+  }, [handleReset]);
 
   // ─── Dynamic Ground Sizing Based on Bot Count ────────────────
   const calculateGroundSize = useCallback((botCount: number): number => {
@@ -750,7 +791,7 @@ export default function SimulationPage() {
         const x = (pos.x * 0.5 + 0.5) * container!.clientWidth;
         const y = (-pos.y * 0.5 + 0.5) * container!.clientHeight;
 
-        if (pos.z < 1) {
+        if (pos.z < 1 && !entity.data.isInside) {
           entity.label.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px)`;
           entity.label.style.display = 'block';
           entity.speechBubble.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 30}px)`;
@@ -889,6 +930,7 @@ export default function SimulationPage() {
               urgentNeed: entity.data.urgentNeed,
               awareness: entity.data.awareness,
               inventory: entity.data.inventory,
+              lifetimeStats: entity.data.lifetimeStats,
             });
           }
 
@@ -952,7 +994,7 @@ export default function SimulationPage() {
         if (disposed) { ws.close(); return; }
         console.log('🔌 Connected to simulation bridge');
         if (statusRef.current) {
-          statusRef.current.textContent = '🟢 Connected';
+          statusRef.current.textContent = '🟢 Broadcasting 5x5';
           statusRef.current.style.color = '#4ade80';
         }
       };
@@ -1043,6 +1085,9 @@ export default function SimulationPage() {
                     built: boolean;
                     buildProgress: number;
                     ownerId: string | null;
+                    ownerName?: string;
+                    ownerColor?: string;
+                    isOccupied?: boolean;
                   }
                   msg.data.worldConfig.shelters.forEach((shelter: ShelterData) => {
                     let shelterObj = sheltersRef.current.get(shelter.id);
@@ -1063,6 +1108,19 @@ export default function SimulationPage() {
                     entity.targetPos.set(botData.x, (botData.height || 1.0) / 2, botData.z);
                     entity.data = botData;
 
+                    // Handle bot visibility when inside buildings
+                    if (botData.isInside) {
+                      entity.group.visible = false;
+                      entity.label.style.display = 'none';
+                      entity.urgentNeedLabel.style.display = 'none';
+                      entity.speechBubble.style.display = 'none';
+                    } else {
+                      entity.group.visible = true;
+                      entity.label.style.display = 'block';
+                      // Urgent need and speech bubble logic is handled elsewhere, 
+                      // but we ensure group/label are visible.
+                    }
+
                     // Update selectedBotInfo if this is the selected bot (for live needs updates)
                     setSelectedBotInfo(prev => {
                       if (prev && prev.botId === botData.botId) {
@@ -1073,6 +1131,7 @@ export default function SimulationPage() {
                           urgentNeed: botData.urgentNeed,
                           awareness: botData.awareness,
                           inventory: botData.inventory,
+                          lifetimeStats: botData.lifetimeStats,
                         };
                       }
                       return prev;
@@ -1090,6 +1149,10 @@ export default function SimulationPage() {
                   cornTargetScaleRef.current = 1; // Grow back to full size
                 }
               }
+              break;
+
+            case 'sim:reset:complete':
+              onSimResetComplete();
               break;
 
             case 'bot:speak': {
@@ -1127,9 +1190,9 @@ export default function SimulationPage() {
 
       ws.onclose = () => {
         if (disposed) return;
-        console.log('🔌 Disconnected — retrying...');
+        console.log('🔴 Retrying ... signal');
         if (statusRef.current) {
-          statusRef.current.textContent = '🔴 Disconnected — retrying...';
+          statusRef.current.textContent = '🔴 Retrying ... signal';
           statusRef.current.style.color = '#f87171';
         }
         reconnectTimer = setTimeout(connectWebSocket, 3000);
@@ -1179,7 +1242,7 @@ export default function SimulationPage() {
       botsToCleanup.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleReset, onSimResetComplete, createBot, resizeGroundForBots, showSpeechBubble]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#0a0a1a' }}>
@@ -1191,10 +1254,11 @@ export default function SimulationPage() {
         selectedBotInfo={selectedBotInfo}
         showAirQuality={showAirQuality}
         setShowAirQuality={setShowAirQuality}
-        showPhysicalNeeds={showPhysicalNeeds}
-        setShowPhysicalNeeds={setShowPhysicalNeeds}
         statusRef={statusRef}
         onReset={handleReset}
+        simSpeed={simSpeed}
+        onSetSpeed={setSpeed}
+        onFullReset={fullReset}
       />
 
       {/* Activity Feed Panel */}
@@ -1215,6 +1279,16 @@ export default function SimulationPage() {
           selectedBotInfo={selectedBotInfo}
           showFeed={showFeed}
           onClose={() => setSelectedBotInfo(null)}
+          showPhysicalNeeds={showPhysicalNeeds}
+          onToggleNeeds={() => setShowPhysicalNeeds(!showPhysicalNeeds)}
+        />
+      )}
+
+      {/* Weather Stats Panel (Top Right) */}
+      {weather && (
+        <WeatherStatsPanel
+          uiTheme={uiTheme}
+          weather={weather}
         />
       )}
 

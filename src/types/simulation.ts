@@ -59,6 +59,7 @@ export interface NearbyBotInfo {
 
 export interface BotData {
   botId: string;
+  isInside?: boolean; // Whether the bot is hidden inside a building
   botName: string;
   personality: string;
   x: number;
@@ -79,6 +80,22 @@ export interface BotData {
     water?: number; // max 5
     food?: number;  // max 3
   };
+  lifetimeStats?: {
+    totalWood: number;
+    totalStone: number;
+    totalWater: number;
+    totalFood: number;
+    reproductionCount: number;
+    childrenCount: number;
+    sheltersBuilt: number;
+    totalPosts: number;
+    totalComments: number;
+    totalUpvotes: number;
+    totalDownvotes: number;
+    waterRefillCount: number;
+    foodRefillCount: number;
+    helpCount: number;
+  };
 }
 
 // ─── Backend/Bridge Shared Types ────────────────────────────────
@@ -94,6 +111,7 @@ export interface NavNode {
 
 export interface BotState {
   botId: string;
+  isInside?: boolean; // Whether the bot is hidden inside a building
   botName: string;
   personality: string;
   x: number;
@@ -121,10 +139,15 @@ export interface BotState {
     homeostasis: { seeking: boolean; critical: boolean; zero: boolean };
     reproduction: { seeking: boolean; critical: boolean; zero: boolean };
   };
+  lastCriticalPostIds?: {
+    water?: string;
+    food?: string;
+    sleep?: string;
+  };
   seeking?: boolean;
   critical?: boolean; // low needs check
   zero?: boolean;     // 0 needs check
-  partnerId?: string; // Bot currently coupling with for reproduction
+  couplingPartnerId?: string; // Bot currently coupling with for reproduction
   inventory: {
     wood: number;
     stone: number;
@@ -137,6 +160,24 @@ export interface BotState {
   urgentNeed?: string; // Emoji to display above bot
   path: Array<{ x: number; z: number }>;
   pathIndex: number;
+
+  // Lifetime Metrics
+  lifetimeStats: {
+    totalWood: number;
+    totalStone: number;
+    totalWater: number;
+    totalFood: number;
+    reproductionCount: number;
+    childrenCount: number;
+    sheltersBuilt: number;
+    totalPosts: number;
+    totalComments: number;
+    totalUpvotes: number;
+    totalDownvotes: number;
+    waterRefillCount: number;
+    foodRefillCount: number;
+    helpCount: number;
+  };
 }
 
 export interface WorldConfig {
@@ -148,6 +189,7 @@ export interface WorldConfig {
   stoneSpots: Array<{ x: number; z: number; radius: number; available: number }>;
   shelters: ShelterData[]; // Array for easier iteration/finding
   sundial: { x: number; z: number; radius: number };
+  aqi?: number;
 }
 
 export interface ShelterData {
@@ -156,8 +198,11 @@ export interface ShelterData {
   x: number;
   z: number;
   ownerId: string | null;
+  ownerName?: string;
+  ownerColor?: string;
   built: boolean;
   buildProgress: number; // 0 to 100
+  isOccupied?: boolean;
 }
 
 // ─── Three.js Bot Entity ───────────────────────────────────────
@@ -181,6 +226,7 @@ export interface BotEntity {
 export interface ActivityMessage {
   id: string;
   postId?: string;
+  parentId?: string; // If this is a reply to another post
   botName: string;
   botColor: string;
   text: string;
@@ -222,6 +268,22 @@ export interface SelectedBotInfo {
     stone: number;
     water?: number;
     food?: number;
+  };
+  lifetimeStats?: {
+    totalWood: number;
+    totalStone: number;
+    totalWater: number;
+    totalFood: number;
+    reproductionCount: number;
+    childrenCount: number;
+    sheltersBuilt: number;
+    totalPosts: number;
+    totalComments: number;
+    totalUpvotes: number;
+    totalDownvotes: number;
+    waterRefillCount: number;
+    foodRefillCount: number;
+    helpCount: number;
   };
 }
 

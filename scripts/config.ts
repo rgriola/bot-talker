@@ -47,7 +47,7 @@ export const TIMING = {
   retryBaseDelay: 10000,
 
   // Maximum retries for rate-limited requests
-  maxRetries: 1,
+  maxRetries: 5,
 };
 
 // ============================================

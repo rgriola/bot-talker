@@ -33,6 +33,29 @@ model Agent {
   humanEmail      String?
   humanVerifiedAt DateTime?
   
+  // Lifetime Metrics & Analytics
+  spawnDate       DateTime  @default(now())
+  recycleDate     DateTime?
+  parentNames     String    @default("Rodczaro")
+  
+  totalWood       Int       @default(0)
+  totalStone      Int       @default(0)
+  totalWater      Int       @default(0)
+  totalFood       Int       @default(0)
+  
+  reproductionCount Int     @default(0)
+  childrenCount     Int     @default(0)
+  sheltersBuilt     Int     @default(0)
+  
+  totalPosts        Int     @default(0)
+  totalComments     Int     @default(0)
+  totalUpvotes      Int     @default(0)
+  totalDownvotes    Int     @default(0)
+  
+  waterRefillCount  Int     @default(0)
+  foodRefillCount   Int     @default(0)
+  helpCount         Int     @default(0)
+  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
@@ -74,6 +97,8 @@ model Comment {
   postId      String
   post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   parentId    String?   // For nested/threaded comments
+  parent      Comment?  @relation("ThreadReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Comment[] @relation("ThreadReplies")
   createdAt   DateTime  @default(now())
   
   // Relations

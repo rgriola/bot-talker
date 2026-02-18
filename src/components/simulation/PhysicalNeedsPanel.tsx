@@ -81,53 +81,107 @@ export function PhysicalNeedsPanel({
         overflowY: 'auto' as const,
       }}
     >
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '16px',
-        paddingBottom: '12px',
-        borderBottom: `1px solid ${uiTheme.borderColor}`,
-      }}>
-        <div>
-          <div style={{ color: uiTheme.textPrimary, fontSize: '14px', fontWeight: 700, marginBottom: '2px' }}>
-            💧 Physical Needs
+      {/* Header with Prominent Bot Name */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+        }}>
+          <div>
+            <div style={{
+              color: uiTheme.textPrimary,
+              fontSize: '20px',
+              fontWeight: 800,
+              lineHeight: 1.2,
+              marginBottom: '4px',
+              letterSpacing: '-0.5px'
+            }}>
+              {selectedBotInfo.botName}
+            </div>
+            <div style={{
+              color: uiTheme.textSecondary,
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              opacity: 0.8
+            }}>
+              💧 Physical Needs
+            </div>
           </div>
-          <div style={{ color: uiTheme.textMuted, fontSize: '10px' }}>
-            {selectedBotInfo.botName}
-          </div>
+          <button
+            onClick={onClose}
+            style={{
+              color: uiTheme.textSecondary,
+              background: 'rgba(255,255,255,0.05)',
+              border: 'none',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              fontSize: '14px',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s',
+            }}
+          >
+            ✕
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          style={{
-            color: uiTheme.textMuted,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '16px',
-            padding: '4px',
-            lineHeight: 1,
-            transition: 'color 0.2s',
-          }}
-        >
-          ✕
-        </button>
       </div>
 
-      {/* Overall Status */}
+      {/* Overall Status & Critical Health Bar */}
       <div style={{
-        background: 'rgba(74, 158, 255, 0.1)',
-        padding: '12px',
-        borderRadius: '10px',
-        marginBottom: '16px',
-        border: '1px solid rgba(74, 158, 255, 0.2)',
+        background: 'rgba(74, 158, 255, 0.08)',
+        padding: '16px',
+        borderRadius: '12px',
+        marginBottom: '20px',
+        border: '1px solid rgba(74, 158, 255, 0.15)',
       }}>
-        <div style={{ fontSize: '10px', color: uiTheme.textMuted, marginBottom: '6px', textTransform: 'uppercase' as const, letterSpacing: '1px' }}>
-          Bot Status
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          marginBottom: '12px'
+        }}>
+          <div>
+            <div style={{ fontSize: '10px', color: uiTheme.textSecondary, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600 }}>
+              Current Condition
+            </div>
+            <div style={{ fontSize: '18px', color: uiTheme.textPrimary, fontWeight: 800 }}>
+              {getBotStatus(selectedBotInfo.state, needs)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '10px', color: uiTheme.textSecondary, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>
+              Homeostasis
+            </div>
+            <div style={{ fontSize: '18px', color: needs.homeostasis > 30 ? '#4caf50' : '#f44336', fontWeight: 800 }}>
+              {Math.round(needs.homeostasis)}%
+            </div>
+          </div>
         </div>
-        <div style={{ fontSize: '16px', color: uiTheme.textPrimary, fontWeight: 700 }}>
-          {getBotStatus(selectedBotInfo.state, needs)}
+
+        {/* Prominent Health Bar */}
+        <div style={{
+          width: '100%',
+          height: '10px',
+          background: 'rgba(0,0,0,0.4)',
+          borderRadius: '5px',
+          overflow: 'hidden',
+          boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{
+            width: `${needs.homeostasis}%`,
+            height: '100%',
+            background: needs.homeostasis > 60 ? 'linear-gradient(90deg, #4caf50, #81c784)' :
+              needs.homeostasis > 30 ? 'linear-gradient(90deg, #ff9800, #ffb74d)' :
+                'linear-gradient(90deg, #f44336, #e57373)',
+            transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: '0 0 15px rgba(255,255,255,0.1)'
+          }} />
         </div>
       </div>
 
@@ -180,7 +234,20 @@ export function PhysicalNeedsPanel({
           <NeedsGridCard icon="🫁" label="Air" value={needs.air} uiTheme={uiTheme} />
           <NeedsGridCard icon="🏠" label="Shelter" value={needs.shelter} uiTheme={uiTheme} />
           <NeedsGridCard icon="👕" label="Clothing" value={needs.clothing} uiTheme={uiTheme} />
-          <NeedsGridCard icon="⚖️" label="Health" value={needs.homeostasis} uiTheme={uiTheme} />
+          <div style={{
+            background: 'rgba(255,255,255,0.03)',
+            padding: '10px',
+            borderRadius: '8px',
+            border: `1px dashed ${uiTheme.borderColor}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            color: uiTheme.textSecondary,
+            opacity: 0.5
+          }}>
+            Slot Empty
+          </div>
         </div>
       </div>
 

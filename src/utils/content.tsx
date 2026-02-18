@@ -15,21 +15,21 @@ import { ReactNode } from 'react';
 export function renderContentWithLinks(content: string): ReactNode[] {
   const elements: ReactNode[] = [];
   let key = 0;
-  
-  // Pattern to match: ***text*** for bold italic, and [text](url) for links
-  const combinedPattern = /(\*{3}[^*]+\*{3})|(\[[^\]]+\]\([^)]+\))/g;
-  
+
+  // Pattern to match: ***text*** for bold italic, [text](url) for links, and @bot for mentions
+  const combinedPattern = /(\*{3}[^*]+\*{3})|(\[[^\]]+\]\([^)]+\))|(@\w+)/g;
+
   let lastIndex = 0;
   let match;
-  
+
   while ((match = combinedPattern.exec(content)) !== null) {
     // Add text before match as plain span
     if (match.index > lastIndex) {
       elements.push(<span key={key++}>{content.slice(lastIndex, match.index)}</span>);
     }
-    
+
     const matched = match[0];
-    
+
     if (matched.startsWith('***') && matched.endsWith('***')) {
       // Bold italic: ***text*** → <strong style="italic">
       const innerText = matched.slice(3, -3);
@@ -60,15 +60,32 @@ export function renderContentWithLinks(content: string): ReactNode[] {
           </a>
         );
       }
+    } else if (matched.startsWith('@')) {
+      // Mention: @BotName
+      const botName = matched.slice(1);
+      elements.push(
+        <a
+          key={key++}
+          href={`/bot/${encodeURIComponent(botName)}`}
+          style={{
+            color: '#fbbf24', // Amber/Yellow for mentions
+            fontWeight: 600,
+            textDecoration: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          {matched}
+        </a>
+      );
     }
-    
+
     lastIndex = match.index + matched.length;
   }
-  
+
   // Add remaining text after last match
   if (lastIndex < content.length) {
     elements.push(<span key={key++}>{content.slice(lastIndex)}</span>);
   }
-  
+
   return elements.length > 0 ? elements : [<span key={0}>{content}</span>];
 }

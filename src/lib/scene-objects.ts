@@ -21,6 +21,9 @@ interface ShelterConfig {
     built: boolean;
     buildProgress: number;
     ownerId: string | null;
+    ownerName?: string;
+    ownerColor?: string;
+    isOccupied?: boolean;
 }
 
 // ─── Water Spot ─────────────────────────────────────────────────
@@ -219,23 +222,40 @@ export function createSundial(config: { x: number; z: number; radius: number }):
         group.add(line);
     }
 
-    // Triangular gnomon
-    const gnomonHeight = baseRadius * 0.8;
-    const gnomonLength = baseRadius * 0.9;
-    const gnomonShape = new THREE.Shape();
-    gnomonShape.moveTo(0, 0);
-    gnomonShape.lineTo(gnomonLength, 0);
-    gnomonShape.lineTo(0, gnomonHeight);
-    gnomonShape.lineTo(0, 0);
-
-    const gnomonGeo = new THREE.ExtrudeGeometry(gnomonShape, { depth: 0.05, bevelEnabled: false });
-    const gnomonMat = new THREE.MeshStandardMaterial({ color: 0xcd7f32, metalness: 0.6, roughness: 0.3 });
+    // Obelisk-style gnomon (replaces thin triangle)
+    const gnomonHeight = 3.0;
+    const gnomonGeo = new THREE.CylinderGeometry(0.01, 0.08, gnomonHeight, 4);
+    const gnomonMat = new THREE.MeshStandardMaterial({
+        color: 0xcd7f32,
+        metalness: 0.7,
+        roughness: 0.2
+    });
     const gnomon = new THREE.Mesh(gnomonGeo, gnomonMat);
-    gnomon.position.set(-0.025, 0.16, 0);
-    gnomon.rotation.x = -Math.PI / 2;
-    gnomon.rotation.z = Math.PI / 2;
+    gnomon.position.set(0, 0.16 + gnomonHeight / 2, 0);
     gnomon.castShadow = true;
     group.add(gnomon);
+
+    // Tip of the gnomon (slight point)
+    const bitGeo = new THREE.ConeGeometry(0.01, 0.05, 4);
+    const bit = new THREE.Mesh(bitGeo, gnomonMat);
+    bit.position.y = gnomonHeight / 2 + 0.025;
+    gnomon.add(bit);
+
+    // North Chevron indicator (12 o'clock position)
+    const chevronGroup = new THREE.Group();
+    const chevMat = new THREE.MeshStandardMaterial({ color: 0xcd7f32, metalness: 0.8, roughness: 0.2 });
+    const chevPart1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.01, 0.2), chevMat);
+    const chevPart2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.01, 0.2), chevMat);
+
+    chevPart1.rotation.y = Math.PI / 4;
+    chevPart1.position.x = 0.06;
+    chevPart2.rotation.y = -Math.PI / 4;
+    chevPart2.position.x = -0.06;
+
+    chevronGroup.add(chevPart1);
+    chevronGroup.add(chevPart2);
+    chevronGroup.position.set(0, 0.17, -baseRadius * 0.8); // North is local -Z
+    group.add(chevronGroup);
 
     // Decorative ring
     const ringGeo = new THREE.TorusGeometry(baseRadius * 1.05, 0.03, 8, 32);
@@ -279,6 +299,36 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
         backWall.position.set(0, 0.5, -0.42);
         shelterObj.add(backWall);
 
+        // Add Owner Nameplate to the back wall
+        if (shelter.ownerName) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                ctx.fillRect(0, 0, 256, 64);
+                ctx.font = 'bold 36px Arial';
+                ctx.fillStyle = shelter.ownerColor || '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(shelter.ownerName, 128, 32);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const plateGeo = new THREE.PlaneGeometry(0.6, 0.15);
+                const plateMat = new THREE.MeshStandardMaterial({
+                    map: texture,
+                    transparent: true,
+                    side: THREE.FrontSide
+                });
+                const plate = new THREE.Mesh(plateGeo, plateMat);
+                // Position on the side wall (Right side)
+                plate.position.set(0.375, 0.6, 0);
+                plate.rotation.y = Math.PI / 2;
+                shelterObj.add(plate);
+            }
+        }
+
         const frontWallHalfGeo = new THREE.BoxGeometry(0.3, 0.8, 0.08);
         const frontWallLeft = new THREE.Mesh(frontWallHalfGeo, wallMat);
         frontWallLeft.position.set(-0.3, 0.5, 0.42);
@@ -308,6 +358,27 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
         rightRoof.position.set(0, 1.0, 0.22);
         rightRoof.rotation.x = -Math.PI * 0.2;
         shelterObj.add(rightRoof);
+
+        // ZZZ Indicator if occupied
+        if (shelter.isOccupied) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.font = '64px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('💤', 64, 64);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                const sprite = new THREE.Sprite(spriteMat);
+                sprite.position.set(0, 1.6, 0); // Above the shelter
+                sprite.scale.set(0.6, 0.6, 1);
+                shelterObj.add(sprite);
+            }
+        }
     } else if (shelter.buildProgress > 0) {
         // Under construction
         const progress = shelter.buildProgress / 100;
@@ -333,6 +404,78 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
         plot.rotation.x = -Math.PI / 2;
         plot.position.y = 0.02;
         shelterObj.add(plot);
+    }
+
+    // Add Mailbox if shelter has an owner
+    if (shelter.ownerId) {
+        const mailboxGroup = new THREE.Group();
+        // Position mailbox in one corner (e.g., front-right: x=0.4, z=0.4)
+        mailboxGroup.position.set(0.4, 0, 0.4);
+
+        // Mailbox Post
+        const postGeo = new THREE.BoxGeometry(0.04, 0.6, 0.04);
+        const postMat = new THREE.MeshStandardMaterial({ color: 0x4a2c1d, metalness: 0.0, roughness: 1.0 });
+        const post = new THREE.Mesh(postGeo, postMat);
+        post.position.y = 0.3;
+        mailboxGroup.add(post);
+
+        // Mailbox Body (Main box)
+        const boxGeo = new THREE.BoxGeometry(0.15, 0.1, 0.25);
+        // Use bot's color for the mailbox body
+        const boxMat = new THREE.MeshStandardMaterial({
+            color: shelter.ownerColor || '#888888',
+            metalness: 0.3,
+            roughness: 0.5
+        });
+        const box = new THREE.Mesh(boxGeo, boxMat);
+        box.position.y = 0.65;
+        mailboxGroup.add(box);
+
+        // Mailbox Roof (Curved top or just simple box)
+        const roofGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.25, 12, 1, false, 0, Math.PI);
+        const roof = new THREE.Mesh(roofGeo, boxMat);
+        roof.rotation.x = -Math.PI / 2;
+        roof.position.y = 0.7;
+        mailboxGroup.add(roof);
+
+        // Flag (Red)
+        const flagGeo = new THREE.BoxGeometry(0.01, 0.08, 0.04);
+        const flagMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const flag = new THREE.Mesh(flagGeo, flagMat);
+        flag.position.set(0.08, 0.7, 0.05);
+        mailboxGroup.add(flag);
+
+        // Nameplate
+        if (shelter.ownerName) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = shelter.ownerColor || '#888888';
+                ctx.fillRect(0, 0, 128, 64);
+                ctx.font = 'bold 32px Arial';
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // Draw name (truncate if too long)
+                const displayName = shelter.ownerName.length > 10 ? shelter.ownerName.substring(0, 8) + '..' : shelter.ownerName;
+                ctx.fillText(displayName, 64, 32);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const plateGeo = new THREE.PlaneGeometry(0.12, 0.06);
+                const plateMat = new THREE.MeshStandardMaterial({
+                    map: texture,
+                    transparent: true,
+                    side: THREE.DoubleSide
+                });
+                const plate = new THREE.Mesh(plateGeo, plateMat);
+                plate.position.set(0, 0.65, 0.127); // Front of mailbox
+                mailboxGroup.add(plate);
+            }
+        }
+
+        shelterObj.add(mailboxGroup);
     }
 }
 
