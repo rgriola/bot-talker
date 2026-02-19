@@ -9,7 +9,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🚀 Starting Bot-Talker development environment...${NC}\n"
+echo -e "${GREEN}🚀 Starting Maslov-Hive development environment...${NC}\n"
 
 # Function to check if Docker is running
 check_docker() {

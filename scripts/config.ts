@@ -103,7 +103,7 @@ export const BEHAVIOR = {
 // API SETTINGS
 // ============================================
 export const API = {
-  // Base URL for the Bot-Talker API
+  // Base URL for the Maslov-Hive API
   baseUrl: process.env.API_BASE_URL || 'http://localhost:3000/api/v1',
 
   // Request timeout in milliseconds

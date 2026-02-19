@@ -1,5 +1,5 @@
 #!/bin/bash
-# Database backup script for Bot-Talker
+# Database backup script for Maslov-Hive
 # Exports PostgreSQL data from Docker container
 
 set -e
@@ -15,9 +15,9 @@ DB_USER="bottalker"
 DB_NAME="bottalker_dev"
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/bot-talker_${TIMESTAMP}.sql"
+BACKUP_FILE="${BACKUP_DIR}/maslov-hive_${TIMESTAMP}.sql"
 
-echo -e "${GREEN}🗄️  Bot-Talker Database Backup${NC}\n"
+echo -e "${GREEN}🗄️  Maslov-Hive Database Backup${NC}\n"
 
 # Create backup directory if it doesn't exist
 if [ ! -d "$BACKUP_DIR" ]; then

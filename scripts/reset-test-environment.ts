@@ -4,7 +4,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 
 async function main() {
-  console.log('\n🔄 Resetting Bot-Talker Test Environment\n');
+  console.log('\n🔄 Resetting Maslov-Hive Test Environment\n');
   console.log('='.repeat(50));
 
   // Reset database

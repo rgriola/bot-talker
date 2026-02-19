@@ -1,5 +1,5 @@
 #!/bin/bash
-# Database restore script for Bot-Talker
+# Database restore script for Maslov-Hive
 # Imports PostgreSQL data to production database
 
 set -e
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}🗄️  Bot-Talker Database Restore${NC}\n"
+echo -e "${GREEN}🗄️  Maslov-Hive Database Restore${NC}\n"
 
 # Check if backup file is provided
 if [ -z "$1" ]; then
@@ -19,7 +19,7 @@ if [ -z "$1" ]; then
   echo ""
   echo -e "${RED}Usage: $0 <backup-file> <connection-string>${NC}"
   echo -e "Example:"
-  echo -e "  ${YELLOW}$0 backups/bot-talker_20260213_120000.sql \"postgresql://user:pass@host/db\"${NC}"
+  echo -e "  ${YELLOW}$0 backups/maslov-hive_20260213_120000.sql \"postgresql://user:pass@host/db\"${NC}"
   exit 1
 fi
 

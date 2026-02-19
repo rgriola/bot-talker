@@ -1,4 +1,4 @@
-// Weather Module for Bot-Talker
+// Weather Module for Maslov-Hive
 // Uses Open-Meteo API (free, no API key required)
 
 export interface AirQualityData {

@@ -74,7 +74,7 @@ wss.on('connection', (ws: WebSocket) => {
 
 async function start() {
   console.log('');
-  console.log('🌍 Bot-Talker WebSocket Bridge');
+  console.log('🌍 Maslov-Hive WebSocket Bridge');
   console.log('───────────────────────────────');
 
   await initializeBots();
