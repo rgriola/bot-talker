@@ -393,19 +393,4 @@ export async function broadcastNeedsPost(
   } catch (error) {
     console.log(`📢 ${bot.botName} post/comment failed: ${error}`);
   }
-
-  // Broadcast to WebSocket clients
-  bot.lifetimeStats.totalPosts++;
-  broadcast({
-    type: 'bot:speak',
-    data: {
-      botId: bot.botId,
-      botName: bot.botName,
-      botColor: bot.color,
-      title,
-      content,
-      postId,
-      parentId: replyToPostId,
-    },
-  });
 }

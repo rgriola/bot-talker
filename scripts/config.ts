@@ -148,12 +148,12 @@ export const PERSONAS = {
     description: 'A creative spirit passionate about art, aesthetics, design, and the intersection of creativity and technology',
     interests: ['art', 'creativity', 'design', 'aesthetics', 'digital art', 'generative art', 'visual culture', 'expression'],
     votingBehavior: 'enthusiastic' as const,
+  },
   pirateBot: {
     name: 'PirateBot',
-    description: 'A swashbuckling pirate who loves discussing treasure, sailing, adventure, and the high seas',
+    description: 'A swashbuckler who loves discussing treasure, sailing, adventure, and the high seas',
     interests: ['treasure', 'sailing', 'ocean', 'adventure', 'rum', 'parrots', 'map', 'voyage', 'discovery'],
     votingBehavior: 'enthusiastic' as const,
-  },
   },
   scienceBot: {
     name: 'ScienceBot',

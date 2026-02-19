@@ -11,6 +11,7 @@ import { broadcast } from './broadcast';
 
 export async function pollForNewPosts() {
   try {
+    // 1. Fetch new posts
     const recentPosts = await prisma.post.findMany({
       where: { createdAt: { gte: bridgeState.lastPollTime } },
       include: { agent: true },
@@ -18,28 +19,43 @@ export async function pollForNewPosts() {
       take: 50,
     });
 
-    if (recentPosts.length > 0) {
-      // Set chronologically so they're broadcast in order (oldest first)
-      const chronological = [...recentPosts].reverse();
+    // 2. Fetch new comments
+    const recentComments = await prisma.comment.findMany({
+      where: { createdAt: { gte: bridgeState.lastPollTime } },
+      include: { agent: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
 
-      // Clock-drift-proof update: new poll starts just after the newest post we found
-      bridgeState.lastPollTime = new Date(recentPosts[0].createdAt.getTime() + 1);
+    const allNewItems = [
+      ...recentPosts.map(p => ({ ...p, itemType: 'post' as const })),
+      ...recentComments.map(c => ({ ...c, itemType: 'comment' as const }))
+    ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-      for (const post of chronological) {
-        const bot = bots.get(post.agent.id);
+    if (allNewItems.length > 0) {
+      // Update poll time to just after the latest item found
+      const latestItem = allNewItems[allNewItems.length - 1];
+      bridgeState.lastPollTime = new Date(latestItem.createdAt.getTime() + 1);
+
+      for (const item of allNewItems) {
+        const bot = bots.get(item.agent.id);
         if (bot) {
           bot.state = 'speaking';
-          bot.lastPostTitle = post.title;
+          const title = item.itemType === 'post' ? (item as any).title : (item as any).content.substring(0, 50);
+          bot.lastPostTitle = title;
 
           broadcast({
             type: 'bot:speak',
             data: {
-              postId: post.id,
+              postId: item.itemType === 'post' ? item.id : (item as any).postId,
+              commentId: item.itemType === 'comment' ? item.id : undefined,
+              parentId: item.itemType === 'comment' ? (item as any).parentId : undefined,
               botId: bot.botId,
               botName: bot.botName,
-              title: post.title,
-              content: post.content,
-              time: post.createdAt.toISOString(), // Include precise DB timestamp
+              botColor: bot.color,
+              title: title,
+              content: item.content,
+              time: item.createdAt.toISOString(),
               x: bot.x,
               y: bot.y,
               z: bot.z,

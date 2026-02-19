@@ -226,7 +226,8 @@ export interface BotEntity {
 export interface ActivityMessage {
   id: string;
   postId?: string;
-  parentId?: string; // If this is a reply to another post
+  commentId?: string; // If this is a comment
+  parentId?: string; // If this is a reply to another post/comment
   botName: string;
   botColor: string;
   text: string;

@@ -1027,8 +1027,18 @@ export default function SimulationPage() {
         try {
           const msg = JSON.parse(event.data);
 
+          // Debugging for Activity Feed
+          if (msg.type !== 'world:update') {
+            console.log(`[WS] Received message: ${msg.type}`, msg.data);
+          }
+
           switch (msg.type) {
             case 'world:init':
+              console.log('[WS] World initialization data received', {
+                botCount: msg.data.bots?.length,
+                shelterCount: msg.data.worldConfig?.shelters?.length,
+                worldRadius: msg.data.worldConfig?.groundRadius
+              });
             case 'world:update':
               // Resize ground if worldConfig changed
               if (msg.data.worldConfig) {
@@ -1196,6 +1206,15 @@ export default function SimulationPage() {
                   })
                   : new Date().toLocaleTimeString(),
               };
+
+              console.log(`[ActivityFeed] New post from ${activityMsg.botName}`, {
+                id: activityMsg.id,
+                postId: activityMsg.postId,
+                color: activityMsg.botColor,
+                timeReceived: new Date().toLocaleTimeString(),
+                timeSent: msg.data.time ? new Date(msg.data.time).toLocaleTimeString() : 'N/A',
+                latencyMs: msg.data.time ? Date.now() - new Date(msg.data.time).getTime() : 'N/A'
+              });
 
               // Update bot's post count and recent post
               if (bot) {
