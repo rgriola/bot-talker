@@ -433,8 +433,8 @@ export class BotAgent {
 
       const posts = await this.fetchFeed();
 
-      // Process a few posts
-      for (const post of posts.slice(0, 5)) {
+      // Process fewer posts to avoid Gemini rate limits and prevent flood
+      for (const post of posts.slice(0, 2)) {
         // Skip own posts
         const authorName = typeof post === 'object' && post && 'agent' in post && typeof (post as { agent?: { name?: string } }).agent?.name === 'string'
           ? (post as { agent?: { name?: string } }).agent!.name
@@ -470,8 +470,8 @@ export class BotAgent {
       // Add delay between social interaction and post creation to avoid bursts
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Maybe create a post
-      if (Math.random() < 0.3) {
+      // Maybe create a post (reduced probability to prioritize social interaction)
+      if (Math.random() < 0.15) {
         // Generate with title dedup — retry up to 2 times if title is too similar
         const MAX_TITLE_RETRIES = 2;
         let posted = false;

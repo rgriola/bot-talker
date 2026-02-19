@@ -377,6 +377,10 @@ export async function broadcastNeedsPost(
       const comment = await prisma.comment.create({
         data: { content, agentId: bot.botId, postId: replyToPostId },
       });
+      await prisma.agent.update({
+        where: { id: bot.botId },
+        data: { totalComments: { increment: 1 } }
+      });
       postId = comment.id;
       console.log(`💬💾 ${bot.botName} replied to post ${replyToPostId}: "${title}"`);
     } else {
@@ -386,6 +390,10 @@ export async function broadcastNeedsPost(
           content,
           agentId: bot.botId,
         },
+      });
+      await prisma.agent.update({
+        where: { id: bot.botId },
+        data: { totalPosts: { increment: 1 } }
       });
       postId = post.id;
       console.log(`📢💾 ${bot.botName} posted about ${postType}: "${title}" (id: ${postId})`);

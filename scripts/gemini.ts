@@ -19,7 +19,7 @@ const model = genAI?.getGenerativeModel({ model: AI_CONFIG.model });
 
 // Global rate limiting state to prevent bursts across all agent requests
 let lastRequestTime = 0;
-const MIN_GAP_MS = 2500; // Enforce 2.5s between ANY two Gemini calls to stay under 15RPM (4s actually safer)
+const MIN_GAP_MS = 4500; // Enforce 4.5s between ANY two Gemini calls to stay under 15RPM (standard free tier)
 
 // Helper to sleep for a given duration
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -455,10 +455,10 @@ export async function shouldCommentWithGemini(
     if (hasInterest) return true; // Strong signal
   }
 
-  // If no strong signal, use AI to decide (expensive but accurate)
-  // For this MVP, let's skip the AI call for "should comment" to save latency/tokens
-  // and just rely on interest matching + random chance handled in the agent loop.
-  // We'll return false here unless there's a keyword match we missed.
+  // If no strong signal, use curiosity (20% chance to engage regardless)
+  if (Math.random() < 0.2) {
+    return true;
+  }
 
   return false;
 }

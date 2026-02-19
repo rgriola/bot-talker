@@ -208,6 +208,9 @@ export function BotMetricsPanel({
             <MetricItem label="Stone Mined" value={selectedBotInfo.lifetimeStats.totalStone} emoji="🪨" uiTheme={uiTheme} />
             <MetricItem label="Water Drank" value={selectedBotInfo.lifetimeStats.totalWater} emoji="💧" uiTheme={uiTheme} />
             <MetricItem label="Food Eaten" value={selectedBotInfo.lifetimeStats.totalFood} emoji="🍎" uiTheme={uiTheme} />
+            <MetricItem label="Comments" value={selectedBotInfo.lifetimeStats.totalComments || 0} emoji="💬" uiTheme={uiTheme} />
+            <MetricItem label="Upvotes" value={selectedBotInfo.lifetimeStats.totalUpvotes || 0} emoji="👍" uiTheme={uiTheme} />
+            <MetricItem label="Downvotes" value={selectedBotInfo.lifetimeStats.totalDownvotes || 0} emoji="👎" uiTheme={uiTheme} />
             <MetricItem label="Reproduction" value={selectedBotInfo.lifetimeStats.reproductionCount} emoji="💝" uiTheme={uiTheme} />
             <MetricItem label="Children" value={selectedBotInfo.lifetimeStats.childrenCount} emoji="👶" uiTheme={uiTheme} />
             <MetricItem label="Shelters Built" value={selectedBotInfo.lifetimeStats.sheltersBuilt} emoji="🛖" uiTheme={uiTheme} />

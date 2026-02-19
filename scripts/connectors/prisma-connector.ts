@@ -105,6 +105,7 @@ export class PrismaConnector implements WorldConnector {
                     totalDownvotes: value === -1 ? { increment: 1 } : undefined,
                 }
             });
+            console.log(`${value === 1 ? '👍' : '👎'}💾 [DB] ${agentName} voted on post ${postId.substring(0, 8)}`);
             return vote;
         });
     }
