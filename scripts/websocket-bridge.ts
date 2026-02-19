@@ -448,12 +448,11 @@ async function initializeBots() {
     agentConnector = new PrismaConnector(prisma);
 
     // Load agents with personality data for AI content generation
-    const agentsWithPersonality = await prisma.agent.findMany({
-      where: {
-        enabled: true,
-        personality: { not: null }
-      }
+    const allEnabledAgents = await prisma.agent.findMany({
+      where: { enabled: true }
     });
+    // Filter to only agents with personality data (JSON field)
+    const agentsWithPersonality = allEnabledAgents.filter(a => a.personality !== null);
 
     for (const agent of agentsWithPersonality) {
       try {
