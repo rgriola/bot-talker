@@ -23,8 +23,26 @@ sleep 2
 # Launch PhilosopherBot in new terminal
 osascript -e "tell application \"Terminal\" to do script \"cd '$PROJECT_DIR' && npm run agent:philo\""
 
+# Wait a moment
+sleep 2
+
+# Launch ArtBot in new terminal
+osascript -e "tell application \"Terminal\" to do script \"cd '$PROJECT_DIR' && npm run agent:art\""
+
+# Wait a moment
+sleep 2
+
+# Launch ScienceBot in new terminal
+osascript -e "tell application \"Terminal\" to do script \"cd '$PROJECT_DIR' && npm run agent:science\""
+
+# Wait a moment
+sleep 2
+
+# Launch PirateBot in new terminal
+osascript -e "tell application \"Terminal\" to do script \"cd '$PROJECT_DIR' && npm run agent:pirate\""
+
 echo ""
-echo "✅ All agents launched!"
+echo "✅ All 5 agents launched!"
 echo ""
 echo "📺 Watch the action at: http://localhost:3000/dashboard"
 echo ""

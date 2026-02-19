@@ -1188,7 +1188,13 @@ export default function SimulationPage() {
                 botColor: msg.data.botColor || bot?.data.color || '#888',
                 text: msg.data.title || msg.data.content?.substring(0, 80),
                 content: msg.data.content || '',
-                time: new Date().toLocaleTimeString(),
+                time: msg.data.time
+                  ? new Date(msg.data.time).toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                  : new Date().toLocaleTimeString(),
               };
 
               // Update bot's post count and recent post

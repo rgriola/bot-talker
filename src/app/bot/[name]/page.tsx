@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { renderContentWithLinks } from '@/utils/content'
 
 interface Personality {
     name?: string
@@ -11,6 +12,13 @@ interface Personality {
     style?: string
     adjectives?: string[]
     votingBehavior?: string
+}
+
+interface PostComment {
+    id: string
+    content: string
+    createdAt: string
+    agent: { name: string }
 }
 
 interface Post {
@@ -48,8 +56,11 @@ export default function BotProfilePage() {
     const [bot, setBot] = useState<BotProfile | null>(null)
     const [loading, setLoading] = useState(true)
     const [expandedPost, setExpandedPost] = useState<string | null>(null)
+    const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({})
+    const [commentLoadingStatus, setCommentLoadingStatus] = useState<Record<string, boolean>>({})
 
     useEffect(() => {
+        setLoading(true)
         fetch(`/api/v1/agents/${encodeURIComponent(name)}`)
             .then(res => res.json())
             .then(data => {
@@ -58,6 +69,28 @@ export default function BotProfilePage() {
             })
             .catch(() => setLoading(false))
     }, [name])
+
+    const toggleExpand = async (postId: string) => {
+        if (expandedPost === postId) {
+            setExpandedPost(null)
+            return
+        }
+
+        setExpandedPost(postId)
+
+        // Load comments if not already loaded
+        if (!postComments[postId] && !commentLoadingStatus[postId]) {
+            setCommentLoadingStatus(prev => ({ ...prev, [postId]: true }))
+            fetch(`/api/v1/comments?postId=${postId}`)
+                .then(res => res.json())
+                .then(data => {
+                    const comments = data.data?.comments || data.comments || []
+                    setPostComments(prev => ({ ...prev, [postId]: comments }))
+                    setCommentLoadingStatus(prev => ({ ...prev, [postId]: false }))
+                })
+                .catch(() => setCommentLoadingStatus(prev => ({ ...prev, [postId]: false })))
+        }
+    }
 
     const color = bot?.color || '#4a9eff'
     const emoji = BOT_EMOJIS[name] || '🤖'
@@ -295,8 +328,10 @@ export default function BotProfilePage() {
                                 borderLeft: `3px solid ${color}`,
                                 cursor: 'pointer',
                                 transition: 'background 0.15s',
+                                overflowWrap: 'anywhere', // Ensure long links/text don't overflow
+                                wordBreak: 'break-word',
                             }}
-                            onClick={() => setExpandedPost(expandedPost === post.id ? null : post.id)}
+                            onClick={() => toggleExpand(post.id)}
                         >
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                                 <span style={{ color: '#e0e0ff', fontSize: '14px', fontWeight: 600 }}>
@@ -308,15 +343,59 @@ export default function BotProfilePage() {
                             </div>
 
                             {expandedPost === post.id ? (
-                                <div style={{
-                                    color: '#bbb',
-                                    fontSize: '13px',
-                                    lineHeight: '1.7',
-                                    whiteSpace: 'pre-wrap' as const,
-                                    marginTop: '8px',
-                                }}>
-                                    {post.content}
-                                </div>
+                                <>
+                                    <div style={{
+                                        color: '#bbb',
+                                        fontSize: '13px',
+                                        lineHeight: '1.7',
+                                        whiteSpace: 'pre-wrap' as const,
+                                        marginTop: '8px',
+                                    }}>
+                                        {renderContentWithLinks(post.content)}
+                                    </div>
+
+                                    {/* Comments Section */}
+                                    {(commentLoadingStatus[post.id] || (postComments[post.id] && postComments[post.id].length > 0)) && (
+                                        <div style={{
+                                            marginTop: '16px',
+                                            padding: '12px',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            borderRadius: '8px',
+                                            borderTop: '1px solid rgba(255,255,255,0.05)',
+                                        }}>
+                                            <div style={{
+                                                fontSize: '10px',
+                                                color: '#6699cc',
+                                                fontWeight: 700,
+                                                letterSpacing: '1px',
+                                                marginBottom: '10px',
+                                                textTransform: 'uppercase' as const
+                                            }}>
+                                                Comments
+                                            </div>
+                                            {commentLoadingStatus[post.id] ? (
+                                                <div style={{ fontSize: '12px', color: '#555', fontStyle: 'italic' }}>Loading comments...</div>
+                                            ) : (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    {postComments[post.id]?.map(comment => (
+                                                        <div key={comment.id} style={{
+                                                            fontSize: '12px',
+                                                            lineHeight: '1.5',
+                                                            padding: '4px 0',
+                                                        }}>
+                                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                                                <span style={{ color: '#4a9eff', fontWeight: 600, fontSize: '11px' }}>
+                                                                    {comment.agent.name}:
+                                                                </span>
+                                                                <span style={{ color: '#aaa', flex: 1 }}>{comment.content}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </>
                             ) : (
                                 <div style={{
                                     color: '#888',

@@ -40,6 +40,10 @@ export const TIMING = {
 
   // How often ScienceBot posts (3.5 minutes)
   scienceBotPostFrequency: 120000,
+
+  // How often PirateBot posts (2 minutes)
+  pirateBotPostFrequency: 120000,
+
   // Delay between API calls to avoid rate limiting
   apiCallDelay: 6000,
 
@@ -65,6 +69,9 @@ export const BEHAVIOR = {
 
   // Probability that ScienceBot will comment (0.0 - 1.0)
   scienceBotCommentProbability: 0.6,
+
+  // Probability that PirateBot will comment (0.0 - 1.0)
+  pirateBotCommentProbability: 0.8,
 
   // Keywords that trigger TechBot to comment
   techKeywords: [
@@ -96,6 +103,13 @@ export const BEHAVIOR = {
     'evidence', 'theory', 'method', 'analysis', 'result', 'observe', 'measure', 'test', 'peer review', 'journal',
     'quantum', 'evolution', 'genome', 'climate', 'space', 'particle', 'cell', 'brain', 'energy', 'matter',
     'scientific', 'empirical', 'rational', 'systematic', 'replicate', 'variable', 'correlation', 'causation'
+  ],
+
+  // Keywords that trigger PirateBot to comment
+  pirateKeywords: [
+    'treasure', 'ocean', 'adventure', 'rum', 'parrot', 'ship', 'sailing', 'gold', 'island', 'map',
+    'captain', 'deck', 'shore', 'horizon', 'waves', 'anchors', 'compass', 'nautical', 'swashbuckling',
+    'ahoy', 'land ho', 'mast', 'crew', 'cargo', 'voyage', 'discovery', 'legend', 'bones', 'storm'
   ],
 };
 
@@ -134,6 +148,12 @@ export const PERSONAS = {
     description: 'A creative spirit passionate about art, aesthetics, design, and the intersection of creativity and technology',
     interests: ['art', 'creativity', 'design', 'aesthetics', 'digital art', 'generative art', 'visual culture', 'expression'],
     votingBehavior: 'enthusiastic' as const,
+  pirateBot: {
+    name: 'PirateBot',
+    description: 'A swashbuckling pirate who loves discussing treasure, sailing, adventure, and the high seas',
+    interests: ['treasure', 'sailing', 'ocean', 'adventure', 'rum', 'parrots', 'map', 'voyage', 'discovery'],
+    votingBehavior: 'enthusiastic' as const,
+  },
   },
   scienceBot: {
     name: 'ScienceBot',

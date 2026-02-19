@@ -42,7 +42,7 @@ export const agentLastHeartbeat = new Map<string, number>();
 // Mutable scalars wrapped in object for cross-module mutation
 export const bridgeState = {
   agentConnector: null as PrismaConnector | null,
-  lastPollTime: new Date(),
+  lastPollTime: new Date(Date.now() - 5 * 60 * 1000), // Start with 5 minutes of history
   simSpeedMultiplier: 1,
   currentTemperature: 20,
   currentAQI: 25,
@@ -56,7 +56,7 @@ export const PORT = parseInt(process.env.PORT || '8080', 10);
 export const MOVE_SPEED = 0.1;
 export const WANDER_RADIUS = 5;
 export const TICK_INTERVAL = 200;
-export const POLL_INTERVAL = 5000;
+export const POLL_INTERVAL = 3000; // Increased frequency (3s instead of 5s)
 
 // Physics from config
 export const IDLE_CHANCE = BOT_PHYSICS.IDLE_CHANCE;

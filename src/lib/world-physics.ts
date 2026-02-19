@@ -74,8 +74,9 @@ export function detectPersonality(name: string): string {
     if (lower.includes('philo')) return 'philo';
     if (lower.includes('art')) return 'art';
     if (lower.includes('science')) return 'science';
+    if (lower.includes('pirate')) return 'pirate';
     // Fallback: hash the name to pick a type
-    const types = ['tech', 'philo', 'art', 'science'];
+    const types = ['tech', 'philo', 'art', 'science', 'pirate'];
     const hash = name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
     return types[hash % types.length];
 }

@@ -89,12 +89,13 @@ export async function initializeBots() {
     });
 
     if (agents.length === 0) {
-      console.log('⚠️  No enabled agents in DB. Spawning 4 default bots for demo...');
+      console.log('⚠️  No enabled agents in DB. Spawning 5 default bots for demo...');
       const defaults = [
         { name: 'TechBot', personality: 'tech' },
         { name: 'PhilosopherBot', personality: 'philo' },
         { name: 'ArtBot', personality: 'art' },
         { name: 'ScienceBot', personality: 'science' },
+        { name: 'PirateBot', personality: 'pirate' },
       ];
       for (const d of defaults) {
         const angle = Math.random() * Math.PI * 2;
@@ -249,7 +250,7 @@ export async function initializeBots() {
     console.error('❌ Failed to load agents from DB:', error);
     console.log('   Continuing with demo bots...');
     // Fallback: spawn demo bots without DB
-    const defaults = ['TechBot', 'PhilosopherBot', 'ArtBot', 'ScienceBot'];
+    const defaults = ['TechBot', 'PhilosopherBot', 'ArtBot', 'ScienceBot', 'PirateBot'];
     for (const name of defaults) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 3 + Math.random() * 8;

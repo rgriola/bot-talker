@@ -15,41 +15,48 @@ export async function pollForNewPosts() {
       where: { createdAt: { gte: bridgeState.lastPollTime } },
       include: { agent: true },
       orderBy: { createdAt: 'desc' },
-      take: 10,
+      take: 50,
     });
 
-    bridgeState.lastPollTime = new Date();
+    if (recentPosts.length > 0) {
+      // Set chronologically so they're broadcast in order (oldest first)
+      const chronological = [...recentPosts].reverse();
 
-    for (const post of recentPosts) {
-      const bot = bots.get(post.agent.id);
-      if (bot) {
-        bot.state = 'speaking';
-        bot.lastPostTitle = post.title;
+      // Clock-drift-proof update: new poll starts just after the newest post we found
+      bridgeState.lastPollTime = new Date(recentPosts[0].createdAt.getTime() + 1);
 
-        broadcast({
-          type: 'bot:speak',
-          data: {
-            postId: post.id,
-            botId: bot.botId,
-            botName: bot.botName,
-            title: post.title,
-            content: post.content,
-            x: bot.x,
-            y: bot.y,
-            z: bot.z,
-          },
-        });
+      for (const post of chronological) {
+        const bot = bots.get(post.agent.id);
+        if (bot) {
+          bot.state = 'speaking';
+          bot.lastPostTitle = post.title;
 
-        // Return to idle after 5 seconds
-        setTimeout(() => {
-          if (bot.state === 'speaking') {
-            bot.state = 'idle';
-          }
-        }, 5000);
+          broadcast({
+            type: 'bot:speak',
+            data: {
+              postId: post.id,
+              botId: bot.botId,
+              botName: bot.botName,
+              title: post.title,
+              content: post.content,
+              time: post.createdAt.toISOString(), // Include precise DB timestamp
+              x: bot.x,
+              y: bot.y,
+              z: bot.z,
+            },
+          });
+
+          // Return to idle after 5 seconds
+          setTimeout(() => {
+            if (bot.state === 'speaking') {
+              bot.state = 'idle';
+            }
+          }, 5000);
+        }
       }
     }
-  } catch {
-    // DB might not be available, that's ok
+  } catch (err) {
+    console.error('⚠️ DB Poller error:', err);
   }
 }
 

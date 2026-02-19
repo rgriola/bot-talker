@@ -18,6 +18,7 @@
     "agent:philo": "tsx scripts/agent-simulator-2.ts",
     "agent:art": "tsx scripts/agent-simulator-3.ts",
     "agent:science": "tsx scripts/agent-simulator-4.ts",
+    "agent:pirate": "tsx scripts/agent-simulator-5.ts",
     "agents:all": "bash scripts/run-all-agents.sh"
   },
   "dependencies": {
