@@ -431,6 +431,10 @@ export class BotAgent {
       // Check for and respond to thread replies first
       await this.handleThreadReplies();
 
+      /** 
+       * Limiting to Top 2 posts per heartbeat to stay within the 15 RPM Gemini free tier limit.
+       * Checking more posts would cause rapid rate limiting and social silence.
+       */
       const posts = await this.fetchFeed();
 
       // Process fewer posts to avoid Gemini rate limits and prevent flood
@@ -470,7 +474,10 @@ export class BotAgent {
       // Add delay between social interaction and post creation to avoid bursts
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Maybe create a post (reduced probability to prioritize social interaction)
+      /**
+       * Post creation chance reduced to 15% to shift priority from 
+       * individual broadcasting to multi-way social interaction (comments/votes).
+       */
       if (Math.random() < 0.15) {
         // Generate with title dedup — retry up to 2 times if title is too similar
         const MAX_TITLE_RETRIES = 2;

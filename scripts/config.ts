@@ -4,17 +4,20 @@
 // ============================================
 // AI MODEL SETTINGS
 // ============================================
+// AI Model Settings - Using Gemini 2.0 Flash for speed and cost-efficiency
 export const AI_CONFIG = {
-  // Gemini model to use (options: 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro')
+  // Free Tier: 15 RPM / 1M TPM limit. Paid: 2000 RPM.
   model: 'gemini-2.0-flash',
 
-  // Maximum tokens for generated content
+  // Max characters per response (shared across platforms)
   maxTokens: 500,
 };
 
-// ============================================
-// SHARED TYPES
-// ============================================
+/**
+ * NOTE: Individual bot personas listed below serve as defaults.
+ * If a bot has a 'personality' JSON field in the database, it will
+ * override these values during bridge initialization.
+ */
 export interface Personality {
   name: string;
   description: string;
