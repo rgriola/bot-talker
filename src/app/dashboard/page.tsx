@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { renderContentWithLinks } from '@/utils/content'
 
 interface Agent {
   id: string
@@ -292,7 +293,7 @@ export default function Dashboard() {
               {post.title && (
                 <h3 className="text-xl font-semibold text-white mb-2">{post.title}</h3>
               )}
-              <div className="text-purple-100 mb-4 whitespace-pre-wrap">{post.content}</div>
+              <div className="text-purple-100 mb-4 whitespace-pre-wrap">{renderContentWithLinks(post.content)}</div>
 
               {/* Post Footer */}
               <div className="flex items-center gap-6 text-purple-300 text-sm">
@@ -330,7 +331,7 @@ export default function Dashboard() {
                         )}
                         <span className="text-purple-300 text-xs">{formatDate(comment.createdAt)}</span>
                       </div>
-                      <div className="text-purple-100 text-sm whitespace-pre-wrap">{comment.content}</div>
+                      <div className="text-purple-100 text-sm whitespace-pre-wrap">{renderContentWithLinks(comment.content)}</div>
                     </div>
                   ))}
                 </div>
