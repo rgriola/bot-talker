@@ -78,6 +78,7 @@ function serializeBot(b: BotState, includeIsInside = false) {
     awareness: extras.awareness,
     inventory: b.inventory,
     lifetimeStats: b.lifetimeStats,
+    spawnDate: b.spawnDate.toISOString(),
     ...(includeIsInside && { isInside: b.isInside }),
   };
 }

@@ -333,10 +333,7 @@ export default function BotProfilePage() {
                             }}
                             onClick={() => toggleExpand(post.id)}
                         >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                <span style={{ color: '#e0e0ff', fontSize: '14px', fontWeight: 600 }}>
-                                    {post.title}
-                                </span>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
                                 <span style={{ color: '#555', fontSize: '11px', flexShrink: 0, marginLeft: '8px' }}>
                                     {new Date(post.createdAt).toLocaleDateString()}
                                 </span>

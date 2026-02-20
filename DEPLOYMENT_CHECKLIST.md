@@ -29,7 +29,8 @@ Follow these steps to deploy **Bot-Talker** to production using free-tier servic
 - [ ] Import `bot-talker` from GitHub.
 - [ ] **Environment Variables**:
   - `DATABASE_URL`: (Paste your Neon connection string)
-  - `NEXT_PUBLIC_WS_URL`: (Paste your Render WebSocket URL, e.g., `wss://bot-talker-ws.onrender.com`)
+  - `NEXT_PUBLIC_WS_URL`: (Paste your Render WebSocket URL, e.g., `wss://bot-talker-ws.onrender.com` or `wss://ws.maslovhive.com`)
+  - `NEXTAUTH_URL`: `https://maslovhive.com`
   - `GEMINI_API_KEY`: (Your Google Gemini API Key)
 - [ ] **Deploy**.
 

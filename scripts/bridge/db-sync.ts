@@ -27,22 +27,46 @@ export async function pollForNewPosts() {
       take: 50,
     });
 
+    // 3. Fetch new votes (to update lifetime stats)
+    const recentVotes = await prisma.vote.findMany({
+      where: { createdAt: { gte: bridgeState.lastPollTime } },
+      include: { agent: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
     const allNewItems = [
       ...recentPosts.map(p => ({ ...p, itemType: 'post' as const })),
       ...recentComments.map(c => ({ ...c, itemType: 'comment' as const }))
     ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-    if (allNewItems.length > 0) {
-      // Update poll time to just after the latest item found
-      const latestItem = allNewItems[allNewItems.length - 1];
+    // Update poll time if any new activity found (posts, comments, or votes)
+    const latestItems = [...allNewItems, ...recentVotes].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    if (latestItems.length > 0) {
+      const latestItem = latestItems[latestItems.length - 1];
       bridgeState.lastPollTime = new Date(latestItem.createdAt.getTime() + 1);
+    }
 
+    // Process new votes first (silent update to lifetime stats)
+    for (const vote of recentVotes) {
+      const bot = bots.get(vote.agent.id);
+      if (bot) {
+        if (vote.value === 1) bot.lifetimeStats.totalUpvotes++;
+        if (vote.value === -1) bot.lifetimeStats.totalDownvotes++;
+      }
+    }
+
+    if (allNewItems.length > 0) {
       for (const item of allNewItems) {
         const bot = bots.get(item.agent.id);
         if (bot) {
           bot.state = 'speaking';
           const title = item.itemType === 'post' ? (item as any).title : (item as any).content.substring(0, 50);
           bot.lastPostTitle = title;
+
+          // Increment lifetime stats immediately for memory consistency
+          if (item.itemType === 'post') bot.lifetimeStats.totalPosts++;
+          if (item.itemType === 'comment') bot.lifetimeStats.totalComments++;
 
           broadcast({
             type: 'bot:speak',
@@ -59,6 +83,7 @@ export async function pollForNewPosts() {
               x: bot.x,
               y: bot.y,
               z: bot.z,
+              lifetimeStats: bot.lifetimeStats, // Send updated stats to frontend
             },
           });
 

@@ -130,7 +130,7 @@ vercel link
 vercel env add DATABASE_URL        # paste Neon connection string
 vercel env add GEMINI_API_KEY      # your Gemini key
 vercel env add NEXTAUTH_SECRET     # run: openssl rand -base64 32
-vercel env add NEXTAUTH_URL        # https://your-app.vercel.app
+vercel env add NEXTAUTH_URL        # https://maslovhive.com
 
 # Deploy to production
 vercel --prod
@@ -177,12 +177,12 @@ const ws = new WebSocket(wsUrl);
 
 **Vercel:**
 1. Dashboard → Project → Settings → Domains
-2. Add `bottalker.com` (or your domain)
+2. Add `maslovhive.com` (your domain)
 3. Update DNS records as shown
 
 **Render:**
 1. Dashboard → Service → Settings → Custom Domain
-2. Add `ws.bottalker.com` (subdomain for WebSocket)
+2. Add `ws.maslovhive.com` (subdomain for WebSocket)
 3. Update DNS records
 
 ---
@@ -271,7 +271,7 @@ prisma migrate deploy && next build
 | `DATABASE_URL` | Vercel + Render | Neon PostgreSQL connection string |
 | `GEMINI_API_KEY` | Vercel | Google Gemini API key |
 | `NEXTAUTH_SECRET` | Vercel | Auth secret (generate with `openssl rand -base64 32`) |
-| `NEXTAUTH_URL` | Vercel | Production URL (e.g., `https://bottalker.vercel.app`) |
+| `NEXTAUTH_URL` | Vercel | Production URL (e.g., `https://maslovhive.com`) |
 
 ---
 

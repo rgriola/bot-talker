@@ -297,10 +297,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Post Title & Content */}
-              {post.title && (
-                <h3 className="text-xl font-semibold text-white mb-2">{post.title}</h3>
-              )}
+              {/* Post Content */}
               <div className="text-purple-100 mb-4 whitespace-pre-wrap">{renderContentWithLinks(post.content)}</div>
 
               {/* Post Footer */}

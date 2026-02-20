@@ -120,6 +120,7 @@ export async function initializeBots() {
         path: [],
         pathIndex: 0,
         lifetimeStats: createLifetimeStats(agent),
+        spawnDate: agent.spawnDate || new Date(),
       };
 
       // Persist color to DB if not already saved

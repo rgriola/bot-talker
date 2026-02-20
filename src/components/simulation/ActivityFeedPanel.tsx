@@ -65,7 +65,9 @@ export function ActivityFeedPanel({
           top: '56px',
           left: '0',
           background: uiTheme.panelBg,
-          border: `1px solid ${uiTheme.borderColor}`,
+          borderTop: `1px solid ${uiTheme.borderColor}`,
+          borderRight: `1px solid ${uiTheme.borderColor}`,
+          borderBottom: `1px solid ${uiTheme.borderColor}`,
           borderLeft: 'none',
           borderRadius: '0 8px 8px 0',
           padding: '8px 10px',
@@ -158,66 +160,107 @@ export function ActivityFeedPanel({
             </div>
           )}
 
-          {activityFeed.map(msg => (
-            <div
-              key={msg.id}
-              onClick={() => selectPost(msg)}
-              style={{
-                padding: '12px',
-                marginBottom: '8px',
-                background: selectedPost?.id === msg.id ? uiTheme.cardBgHover : uiTheme.cardBg,
-                borderRadius: '12px',
-                animation: 'fadeInMsg 0.3s ease',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                gap: '12px',
-                border: selectedPost?.id === msg.id ? `1px solid ${ensureContrastRatio(msg.botColor, uiTheme.panelBgHex, 3.0)}` : '1px solid transparent',
-              }}
-            >
-              {/* Avatar Circle */}
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: ensureContrastRatio(msg.botColor, uiTheme.panelBgHex, 3.0),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '16px',
-                flexShrink: 0,
-                boxShadow: `0 2px 8px ${msg.botColor}44`,
-              }}>
-                {msg.botName.substring(0, 1)}
-              </div>
+          {activityFeed.map(msg => {
+            const isReply = !!msg.parentId;
 
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ color: uiTheme.textPrimary, fontSize: '13px', fontWeight: 700 }}>
-                    {msg.botName}
-                  </span>
-                  <span style={{ color: uiTheme.textMuted, fontSize: '11px' }}>
-                    {msg.time}
-                  </span>
+            return (
+              <div
+                key={msg.id}
+                onClick={() => selectPost(msg)}
+                style={{
+                  padding: '14px',
+                  marginBottom: '10px',
+                  background: selectedPost?.id === msg.id ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                  borderRadius: '16px',
+                  animation: 'fadeInMsg 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  border: `1px solid ${selectedPost?.id === msg.id ? ensureContrastRatio(msg.botColor, uiTheme.panelBgHex, 3.0) : 'rgba(255, 255, 255, 0.05)'}`,
+                  boxShadow: selectedPost?.id === msg.id ? `0 8px 16px -4px ${msg.botColor}33` : 'none',
+                  position: 'relative',
+                }}
+              >
+                {/* Thread indicator if reply */}
+                {isReply && (
+                  <div style={{
+                    fontSize: '10px',
+                    color: uiTheme.textMuted,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginBottom: '-2px',
+                    opacity: 0.8
+                  }}>
+                    <span style={{ fontSize: '12px' }}>↩️</span> replied in thread
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  {/* Avatar Circle */}
+                  <div style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '12px', // Squircle
+                    background: ensureContrastRatio(msg.botColor, uiTheme.panelBgHex, 3.0),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    color: '#fff',
+                    flexShrink: 0,
+                    boxShadow: `0 4px 12px ${msg.botColor}44`,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                  }}>
+                    {msg.botName.substring(0, 1)}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                      <span style={{ color: uiTheme.textPrimary, fontSize: '14px', fontWeight: 700, letterSpacing: '-0.2px' }}>
+                        {msg.botName}
+                      </span>
+                      <span style={{ color: uiTheme.textMuted, fontSize: '10px', fontWeight: 500 }}>
+                        {msg.time}
+                      </span>
+                    </div>
+
+                    {/* Content */}
+                    <div style={{
+                      color: uiTheme.textSecondary,
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      letterSpacing: '0.01em',
+                      wordBreak: 'break-word' as const,
+                      display: '-webkit-box',
+                      WebkitLineClamp: isReply ? 8 : 4, // Allow more space for replies
+                      WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                      transition: 'color 0.5s',
+                    }}>
+                      {renderContentWithLinks(msg.content || msg.text)}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Content - Threads style: no title, just content */}
+                {/* Interaction hints - subtle */}
                 <div style={{
-                  color: uiTheme.textSecondary,
-                  fontSize: '13px',
-                  lineHeight: '1.5',
-                  wordBreak: 'break-word' as const,
-                  display: '-webkit-box',
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: 'vertical' as const,
-                  overflow: 'hidden',
-                  transition: 'color 0.5s',
+                  marginTop: '4px',
+                  display: 'flex',
+                  gap: '12px',
+                  paddingLeft: '48px',
+                  opacity: 0.4
                 }}>
-                  {renderContentWithLinks(msg.content || msg.text)}
+                  <span style={{ fontSize: '11px' }}>💬</span>
+                  <span style={{ fontSize: '11px' }}>🔄</span>
+                  <span style={{ fontSize: '11px' }}>❤️</span>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -231,6 +274,10 @@ export function ActivityFeedPanel({
         @keyframes signalPulse {
           0%, 100% { opacity: 0.4; transform: scale(1); }
           50% { opacity: 1; transform: scale(1.1); }
+        }
+        @keyframes fadeInMsg {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}} />
     </>

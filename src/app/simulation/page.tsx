@@ -954,6 +954,7 @@ export default function SimulationPage() {
               awareness: entity.data.awareness,
               inventory: entity.data.inventory,
               lifetimeStats: entity.data.lifetimeStats,
+              spawnDate: entity.data.spawnDate,
             });
           }
 
@@ -1167,6 +1168,7 @@ export default function SimulationPage() {
                           awareness: botData.awareness,
                           inventory: botData.inventory,
                           lifetimeStats: botData.lifetimeStats,
+                          spawnDate: botData.spawnDate,
                         };
                       }
                       return prev;
@@ -1222,8 +1224,26 @@ export default function SimulationPage() {
               if (bot) {
                 bot.postCount += 1;
                 bot.recentPost = activityMsg;
+
+                // Sync lifetime stats if provided in the message
+                if (msg.data.lifetimeStats) {
+                  bot.data.lifetimeStats = msg.data.lifetimeStats;
+                }
+
                 const meta = getPersonalityMeta(bot.data.personality);
                 bot.label.innerHTML = `${meta.emoji} ${bot.data.botName} <span style="opacity:0.7;font-size:0.8em">💡${bot.postCount}</span>`;
+
+                // Immediately update selectedBotInfo if this is the selected bot
+                setSelectedBotInfo(prev => {
+                  if (prev && prev.botId === msg.data.botId) {
+                    return {
+                      ...prev,
+                      postCount: bot.postCount,
+                      lifetimeStats: bot.data.lifetimeStats,
+                    };
+                  }
+                  return prev;
+                });
               }
 
               activityRef.current(prev => {

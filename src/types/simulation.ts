@@ -96,6 +96,7 @@ export interface BotData {
     foodRefillCount: number;
     helpCount: number;
   };
+  spawnDate?: string; // ISO date string
 }
 
 // ─── Backend/Bridge Shared Types ────────────────────────────────
@@ -178,6 +179,7 @@ export interface BotState {
     foodRefillCount: number;
     helpCount: number;
   };
+  spawnDate: Date;
 }
 
 export interface WorldConfig {
@@ -286,6 +288,7 @@ export interface SelectedBotInfo {
     foodRefillCount: number;
     helpCount: number;
   };
+  spawnDate?: string;
 }
 
 export interface UiTheme {

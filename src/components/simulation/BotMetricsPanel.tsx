@@ -98,11 +98,30 @@ export function BotMetricsPanel({
           {meta.emoji}
         </span>
         <div>
-          <div style={{ color: botColorText, fontWeight: 600, fontSize: '15px', marginBottom: '2px' }}>
+          <div style={{ color: botColorText, fontWeight: 600, fontSize: '15px', marginBottom: '1px' }}>
             {selectedBotInfo.botName}
           </div>
-          <div style={{ color: uiTheme.textSecondary, fontSize: '11px', textTransform: 'capitalize' as const }}>
-            {selectedBotInfo.personality}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <div style={{ color: uiTheme.textSecondary, fontSize: '10px', textTransform: 'capitalize' as const }}>
+              {selectedBotInfo.personality}
+            </div>
+            <div style={{ width: '3px', height: '3px', borderRadius: '50%', background: uiTheme.textMuted, opacity: 0.5 }} />
+            <div style={{
+              color: '#4ade80',
+              fontSize: '10px',
+              fontWeight: 600,
+              background: 'rgba(74, 222, 128, 0.1)',
+              padding: '1px 5px',
+              borderRadius: '4px'
+            }}>
+              {(() => {
+                if (!selectedBotInfo.spawnDate) return 'Newborn';
+                const botDays = (Date.now() - new Date(selectedBotInfo.spawnDate).getTime()) / (10 * 3600 * 1000);
+                return botDays < 1
+                  ? `${Math.floor(botDays * 24)}h old`
+                  : `${Math.floor(botDays)}d old`;
+              })()}
+            </div>
           </div>
         </div>
       </div>
@@ -142,7 +161,7 @@ export function BotMetricsPanel({
           textAlign: 'center' as const,
         }}>
           <div style={{ color: '#4a9eff', fontSize: '20px', fontWeight: 700, marginBottom: '4px' }}>
-            {selectedBotInfo.postCount}
+            {selectedBotInfo.lifetimeStats?.totalPosts ?? selectedBotInfo.postCount}
           </div>
           <div style={{ color: uiTheme.textSecondary, fontSize: '9px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' }}>
             Posts
@@ -208,9 +227,12 @@ export function BotMetricsPanel({
             <MetricItem label="Stone Mined" value={selectedBotInfo.lifetimeStats.totalStone} emoji="🪨" uiTheme={uiTheme} />
             <MetricItem label="Water Drank" value={selectedBotInfo.lifetimeStats.totalWater} emoji="💧" uiTheme={uiTheme} />
             <MetricItem label="Food Eaten" value={selectedBotInfo.lifetimeStats.totalFood} emoji="🍎" uiTheme={uiTheme} />
+            <MetricItem label="Total Posts" value={selectedBotInfo.lifetimeStats.totalPosts || 0} emoji="📝" uiTheme={uiTheme} />
             <MetricItem label="Comments" value={selectedBotInfo.lifetimeStats.totalComments || 0} emoji="💬" uiTheme={uiTheme} />
             <MetricItem label="Upvotes" value={selectedBotInfo.lifetimeStats.totalUpvotes || 0} emoji="👍" uiTheme={uiTheme} />
             <MetricItem label="Downvotes" value={selectedBotInfo.lifetimeStats.totalDownvotes || 0} emoji="👎" uiTheme={uiTheme} />
+            <MetricItem label="Water Refills" value={selectedBotInfo.lifetimeStats.waterRefillCount} emoji="🍶" uiTheme={uiTheme} />
+            <MetricItem label="Food Refills" value={selectedBotInfo.lifetimeStats.foodRefillCount} emoji="🧺" uiTheme={uiTheme} />
             <MetricItem label="Reproduction" value={selectedBotInfo.lifetimeStats.reproductionCount} emoji="💝" uiTheme={uiTheme} />
             <MetricItem label="Children" value={selectedBotInfo.lifetimeStats.childrenCount} emoji="👶" uiTheme={uiTheme} />
             <MetricItem label="Shelters Built" value={selectedBotInfo.lifetimeStats.sheltersBuilt} emoji="🛖" uiTheme={uiTheme} />
