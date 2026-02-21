@@ -2,37 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { renderContentWithLinks } from '@/utils/content'
-
-interface Agent {
-  id: string
-  name: string
-  color: string | null
-  verifiedAt: string | null
-  blueskyHandle: string | null
-  blueskyDid: string | null
-}
-
-interface Comment {
-  id: string
-  content: string
-  createdAt: string
-  agent: Agent
-}
-
-interface Post {
-  id: string
-  title: string
-  content: string
-  createdAt: string
-  score: number
-  agent: Agent
-  comments?: Comment[]
-  _count: {
-    comments: number
-    votes: number
-  }
-}
+import type { Post } from '@/types/post'
+import { PostCard } from '@/components/PostCard'
+import { CommentThread } from '@/components/CommentThread'
 
 interface Stats {
   agents: number
@@ -88,7 +60,7 @@ export default function Dashboard() {
       // Expand and fetch comments if not already loaded
       setExpandedPosts(prev => new Set(prev).add(postId))
       const post = posts.find(p => p.id === postId)
-      if (post && (!post.comments || post.comments.length === 0) && post._count.comments > 0) {
+      if (post && (!post.comments || post.comments.length === 0) && (post._count?.comments ?? 0) > 0) {
         await fetchComments(postId)
       }
     }
@@ -112,7 +84,7 @@ export default function Dashboard() {
       // Auto-expand all posts that have comments
       const postsWithComments = new Set<string>(
         newPosts
-          .filter((p: Post) => p._count?.comments > 0)
+          .filter((p: Post) => (p._count?.comments ?? 0) > 0)
           .map((p: Post) => p.id)
       )
       setExpandedPosts(postsWithComments)
@@ -278,70 +250,24 @@ export default function Dashboard() {
         {/* Feed */}
         <div className="space-y-6">
           {posts.map((post) => (
-            <article key={post.id} className="bg-white/10 backdrop-blur-lg rounded-xl p-6" style={{ borderLeft: `4px solid ${post.agent.color || '#7c3aed'}` }}>
-              {/* Post Header */}
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ background: post.agent.color || '#7c3aed' }}>
-                  {post.agent.name.charAt(0)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Link href={`/bot/${encodeURIComponent(post.agent.name)}`} className="font-semibold text-white hover:underline">{post.agent.name}</Link>
-                    {post.agent.verifiedAt && (
-                      <span className="text-blue-400 text-sm" title={`@${post.agent.blueskyHandle}`}>
-                        ✓ Bluesky
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-purple-300 text-sm">{formatDate(post.createdAt)}</div>
-                </div>
-              </div>
-
-              {/* Post Content */}
-              <div className="text-purple-100 mb-4 whitespace-pre-wrap">{renderContentWithLinks(post.content)}</div>
-
-              {/* Post Footer */}
-              <div className="flex items-center gap-6 text-purple-300 text-sm">
-                <span className={post.score > 0 ? 'text-green-400' : post.score < 0 ? 'text-red-400' : ''}>
-                  ⬆️ {post.score} votes
-                </span>
-                <button
-                  onClick={() => toggleComments(post.id)}
-                  className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
-                  disabled={loadingComments.has(post.id)}
-                >
-                  <span>{expandedPosts.has(post.id) ? '🔽' : '💬'}</span>
-                  <span>{post._count?.comments || 0} comments</span>
-                  {loadingComments.has(post.id) && (
-                    <span className="animate-spin">⏳</span>
-                  )}
-                </button>
-              </div>
-
-              {/* Comments (Collapsible) */}
-              {expandedPosts.has(post.id) && (
-                <div className="mt-4 pl-4 border-l-2 border-purple-500/30 space-y-4">
-                  {(!post.comments || post.comments.length === 0) && !loadingComments.has(post.id) && (
-                    <div className="text-purple-300 text-sm italic">No comments yet</div>
-                  )}
-                  {post.comments && post.comments.map((comment) => (
-                    <div key={comment.id} className="bg-white/5 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: comment.agent.color || '#7c3aed' }}>
-                          {comment.agent.name.charAt(0)}
-                        </div>
-                        <Link href={`/bot/${encodeURIComponent(comment.agent.name)}`} className="font-semibold text-white text-sm hover:underline">{comment.agent.name}</Link>
-                        {comment.agent.verifiedAt && (
-                          <span className="text-blue-400 text-xs">✓</span>
-                        )}
-                        <span className="text-purple-300 text-xs">{formatDate(comment.createdAt)}</span>
-                      </div>
-                      <div className="text-purple-100 text-sm whitespace-pre-wrap">{renderContentWithLinks(comment.content)}</div>
-                    </div>
-                  ))}
-                </div>
+            <PostCard
+              key={post.id}
+              post={post}
+              formatDate={formatDate}
+              isExpanded={expandedPosts.has(post.id)}
+              isLoadingComments={loadingComments.has(post.id)}
+              onToggleComments={() => toggleComments(post.id)}
+            >
+              {!loadingComments.has(post.id) && (
+                <CommentThread
+                  comments={post.comments || []}
+                  showAvatar
+                  showDate
+                  showVerifiedBadge
+                  formatDate={formatDate}
+                />
               )}
-            </article>
+            </PostCard>
           ))}
         </div>
       </div>

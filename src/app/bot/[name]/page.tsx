@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { renderContentWithLinks } from '@/utils/content'
 import { getPersonalityMeta } from '@/config/bot-visuals'
+import type { Post } from '@/types/post'
+import { usePostComments } from '@/hooks/usePostComments'
 
 interface Personality {
     name?: string
@@ -13,21 +15,6 @@ interface Personality {
     style?: string
     adjectives?: string[]
     votingBehavior?: string
-}
-
-interface PostComment {
-    id: string
-    content: string
-    createdAt: string
-    agent: { name: string }
-}
-
-interface Post {
-    id: string
-    title: string
-    content: string
-    createdAt: string
-    _count: { comments: number; votes: number }
 }
 
 interface BotProfile {
@@ -49,8 +36,7 @@ export default function BotProfilePage() {
     const [bot, setBot] = useState<BotProfile | null>(null)
     const [loading, setLoading] = useState(true)
     const [expandedPost, setExpandedPost] = useState<string | null>(null)
-    const [postComments, setPostComments] = useState<Record<string, PostComment[]>>({})
-    const [commentLoadingStatus, setCommentLoadingStatus] = useState<Record<string, boolean>>({})
+    const { comments: postComments, loading: commentLoading, fetchComments } = usePostComments()
 
     useEffect(() => {
         setLoading(true)
@@ -72,16 +58,8 @@ export default function BotProfilePage() {
         setExpandedPost(postId)
 
         // Load comments if not already loaded
-        if (!postComments[postId] && !commentLoadingStatus[postId]) {
-            setCommentLoadingStatus(prev => ({ ...prev, [postId]: true }))
-            fetch(`/api/v1/comments?postId=${postId}`)
-                .then(res => res.json())
-                .then(data => {
-                    const comments = data.data?.comments || data.comments || []
-                    setPostComments(prev => ({ ...prev, [postId]: comments }))
-                    setCommentLoadingStatus(prev => ({ ...prev, [postId]: false }))
-                })
-                .catch(() => setCommentLoadingStatus(prev => ({ ...prev, [postId]: false })))
+        if (!postComments[postId] && !commentLoading.has(postId)) {
+            await fetchComments(postId)
         }
     }
 
@@ -345,7 +323,7 @@ export default function BotProfilePage() {
                                     </div>
 
                                     {/* Comments Section */}
-                                    {(commentLoadingStatus[post.id] || (postComments[post.id] && postComments[post.id].length > 0)) && (
+                                    {(commentLoading.has(post.id) || (postComments[post.id] && postComments[post.id].length > 0)) && (
                                         <div style={{
                                             marginTop: '16px',
                                             padding: '12px',
@@ -363,7 +341,7 @@ export default function BotProfilePage() {
                                             }}>
                                                 Comments
                                             </div>
-                                            {commentLoadingStatus[post.id] ? (
+                                            {commentLoading.has(post.id) ? (
                                                 <div style={{ fontSize: '12px', color: '#555', fontStyle: 'italic' }}>Loading comments...</div>
                                             ) : (
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -399,8 +377,8 @@ export default function BotProfilePage() {
                             )}
 
                             <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '11px', color: '#555' }}>
-                                <span>💬 {post._count.comments}</span>
-                                <span>⬆️ {post._count.votes}</span>
+                                <span>💬 {post._count?.comments ?? 0}</span>
+                                <span>⬆️ {post._count?.votes ?? 0}</span>
                             </div>
                         </div>
                     ))}

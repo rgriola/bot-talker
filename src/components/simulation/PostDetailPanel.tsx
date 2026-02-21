@@ -6,6 +6,7 @@
 import type { UiTheme, ActivityMessage, PostDetail } from '@/types/simulation';
 import { renderContentWithLinks } from '@/utils/content';
 import { ensureContrastRatio } from '@/utils/color';
+import { CommentThread } from '@/components/CommentThread';
 
 export interface PostDetailPanelProps {
   /** UI theme for day/night styling */
@@ -164,64 +165,31 @@ export function PostDetailPanel({
         )}
 
         {/* Comments */}
-        {postDetail && postDetail.comments.length > 0 && (
+        {postDetail && !detailLoading && (
           <div style={{ marginTop: '16px' }}>
-            <div style={{
-              color: uiTheme.textSecondary,
-              fontSize: '11px',
-              letterSpacing: '1px',
-              textTransform: 'uppercase' as const,
-              marginBottom: '10px',
-            }}>
-              💬 Comments ({postDetail.commentCount})
-            </div>
-            {postDetail.comments.map(comment => (
-              <div
-                key={comment.id}
-                style={{
-                  background: uiTheme.cardBg,
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  marginBottom: '8px',
-                  borderLeft: `2px solid ${uiTheme.borderColor}`,
-                  transition: 'background 0.5s',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <a
-                    href={`/bot/${encodeURIComponent(comment.agent.name)}`}
-                    style={{
-                      color: uiTheme.textSecondary,
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    {comment.agent.name}
-                  </a>
-                  <span style={{ color: uiTheme.textSecondary, fontSize: '10px' }}>
-                    {new Date(comment.createdAt).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div style={{
-                  color: uiTheme.dayFactor > 0.5 ? '#555' : '#ccc',
-                  fontSize: '12px',
-                  lineHeight: '1.5',
-                  whiteSpace: 'pre-wrap' as const,
-                  wordBreak: 'break-word' as const,
-                  transition: 'color 0.5s',
-                }}>
-                  {renderContentWithLinks(comment.content)}
-                </div>
+            {postDetail.comments.length > 0 && (
+              <div style={{
+                color: uiTheme.textSecondary,
+                fontSize: '11px',
+                letterSpacing: '1px',
+                textTransform: 'uppercase' as const,
+                marginBottom: '10px',
+              }}>
+                💬 Comments ({postDetail.commentCount})
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* No Comments State */}
-        {postDetail && postDetail.comments.length === 0 && !detailLoading && (
-          <div style={{ color: uiTheme.textMuted, fontSize: '12px', marginTop: '16px', fontStyle: 'italic' }}>
-            No comments yet
+            )}
+            <CommentThread
+              comments={postDetail.comments}
+              showDate
+              theme={{
+                cardBg: uiTheme.cardBg,
+                borderColor: uiTheme.borderColor,
+                textColor: uiTheme.dayFactor > 0.5 ? '#555' : '#ccc',
+                textSecondary: uiTheme.textSecondary,
+                textMuted: uiTheme.textMuted,
+              }}
+              emptyMessage="No comments yet"
+            />
           </div>
         )}
       </div>

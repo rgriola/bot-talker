@@ -36,56 +36,51 @@ All subsequent work depends on canonical types existing first.
 
 ---
 
-## Phase 3 — Shared UI Components
+## Phase 3 — Shared UI Components ✅
 
-1. Create `src/components/PostCard.tsx` — single shared post card: avatar circle, agent name link, timestamp, `renderContentWithLinks`, collapsible comment list. Replaces duplicate markup in:
-   - `dashboard/page.tsx` L281–349
-   - `bot/[name]/page.tsx` L315–400
-   - `PostDetailPanel.tsx` L78–231
-2. Create `src/components/CommentThread.tsx` — renders `PostComment[]` with agent name links; used by `PostCard` and `PostDetailPanel`
-3. Create `src/hooks/usePostFetch.ts` — single hook wrapping the `fetch('/api/v1/comments?postId=...')` call with the `data.data?.comments || data.comments || []` normalization copy-pasted in:
-   - `dashboard/page.tsx` L57
-   - `bot/[name]/page.tsx` L85
-   - `simulation/page.tsx` L336
-4. ~~Fix `WeatherStatsPanel.tsx`~~ — **Done in Phase 2 step 8**
-5. Note: `renderContentWithLinks` is already properly centralized in `src/utils/content.tsx` — no extraction needed, the new `PostCard` simply imports it
+_Completed 2026-02-21_
+
+### Created
+1. **`src/hooks/usePostComments.ts`** — shared hook for fetching and caching post comments. Handles `data.data?.comments || data.comments || []` normalization. Returns `{ comments, loading, fetchComments, refetchComments, clearComments }`.
+2. **`src/components/CommentThread.tsx`** — shared comment list component with two render paths: Tailwind (dashboard) and themed inline styles (PostDetailPanel). Supports optional avatars, dates, verified badges, and content linkification.
+3. **`src/components/PostCard.tsx`** — shared post card for feed-style views: avatar, agent name link, verified badge, timestamp, `renderContentWithLinks`, score, and collapsible comment section via children.
+
+### Updated consumers
+- **`dashboard/page.tsx`** (351→277 lines, −21%): Replaced local `Agent`, `Comment`, `Post` interfaces with canonical `Post` import. Post card JSX replaced with `PostCard` + `CommentThread`.
+- **`bot/[name]/page.tsx`** (414→392 lines, −5%): Replaced local `PostComment` and `Post` interfaces with canonical import. Comment fetch logic replaced with `usePostComments` hook.
+- **`PostDetailPanel.tsx`** (231→197 lines, −15%): Comment loop + empty state replaced with `CommentThread` using theme prop.
+- **`simulation/page.tsx`**: Eliminated duplicate comment fetch in canvas click handler — now calls `selectPost()` instead of duplicating 15 lines of fetch logic.
+
+### Canonical type update
+- **`src/types/post.ts`**: `PostComment.agent` broadened from `{ name: string }` to full `Agent` type (with color, verifiedAt, blueskyHandle, blueskyDid). Added optional `score`, `upvotes`, `downvotes` fields.
 
 ---
 
-## Phase 4 — Extract Hooks from simulation/page.tsx
+## Phase 4 — Extract Hooks from simulation/page.tsx ✅
 
-The ~711-line `useEffect` (L627–L1338), 15 `useState` hooks, and 31 `useRef` hooks get restructured.
+_Completed 2026-02-21_
 
-### 4a. State consolidation
+The ~711-line `useEffect`, 15 `useState` hooks, and 31 `useRef` hooks were restructured into 3 custom hooks.
 
-1. Bundle the 31 `useRef` hooks into a single typed `SceneRefs` interface and one `useRef<SceneRefs>()` — reduces the declaration block from ~50 lines to ~5
-2. Consolidate UI toggle states (`showFeed`, `showAirQuality`, `showWeather`, `showAllBots`, `showPhysicalNeeds`) into a `useReducer` with a `PanelState` type and a `toggle(panel)` action — reduces 5 `useState` pairs to 1
+### Approach
 
-### 4b. Hook extraction (3-tier pattern)
+The original plan proposed a 3-tier pattern (`useSimulationScene` / `useSimulationData` / `useSceneSync`), but during implementation the WebSocket handler's tight coupling with Three.js scene objects (10+ direct `scene.add()`, mesh creation, bot entity updates inside message handlers) made a clean data/renderer split impractical without introducing an event-emitter or message-queue architecture — too risky for a single refactor pass. Instead, a pragmatic single-hook approach was used.
 
-The WebSocket handler **directly manipulates Three.js scene objects** in 10+ places (`scene.add()`, `scene.remove()`, mesh creation, bot entity updates). A naive `useSimulationWebSocket` + `useSimulationRenderer` split won't work because the two are tightly coupled. Instead, use a 3-tier pattern:
+### Created
 
-| Hook | Responsibility | Imports THREE? |
-|---|---|---|
-| `useSimulationScene` | Creates Scene/Camera/Renderer/Controls, animation loop, resize handler | Yes |
-| `useSimulationData` | WebSocket connection, reconnect timer, message parsing. Returns reactive data (`bots`, `worldConfig`, `activityFeed`) | **No** |
-| `useSceneSync` | Takes scene refs + data, reconciles 3D objects from data changes (creates/updates/removes meshes) | Yes |
+1. **`src/hooks/useSimulationClock.ts`** (47 lines) — clock `setInterval` + `navigator.geolocation`; returns `{ currentTime, location }`
+2. **`src/hooks/useSimulationTheme.ts`** (72 lines) — the `uiTheme` `useMemo` computation; takes `(currentTime, location)`, returns the full `UiTheme` palette
+3. **`src/hooks/useSimulation.ts`** (~680 lines) — consolidated hook containing all 28 refs, 8 state variables, 9 callbacks, and 6 useEffects. Includes Three.js scene/camera/renderer/controls creation, animation loop (bot lerp, rain/snow/corn), resize handler, click handler (raycasting), WebSocket with world:init/world:update/sim:reset:complete/bot:speak handling, and full cleanup with GPU resource disposal
 
-This makes the coupling explicit — `useSceneSync` is where data meets the renderer, and that's its declared job.
+### Updated
 
-3. `src/hooks/useSimulationClock.ts` — clock `setInterval` + `navigator.geolocation`; returns `{ currentTime, location }`
-4. `src/hooks/useSimulationTheme.ts` — the `uiTheme` `useMemo` (L269–L323); takes `(currentTime, location)`, returns the full `UiTheme` palette
-5. `src/hooks/useSimulationScene.ts` — Three.js scene/camera/renderer/controls setup, animation loop. Exposes the `SceneRefs` container
-6. `src/hooks/useSimulationData.ts` — WebSocket connection and reconnect logic (~278 lines). Parses messages into pure data objects. No Three.js imports
-7. `src/hooks/useSceneSync.ts` — reconciliation layer: takes `SceneRefs` + data from `useSimulationData`, creates/updates/removes 3D objects accordingly
+- **`simulation/page.tsx`** (1,566 → 320 lines, −80%): Now contains only imports, DOM refs, 5 panel toggle states, hook calls, and JSX layout with all panels + style block
 
-### 4c. Gotchas
+### Gotchas preserved
 
-- **`world:init` falls through to `world:update`**: The `case 'world:init':` at ~L1029 has no `break`, intentionally falling through. Hook extraction must preserve this exact behavior
-- **Main `useEffect` has `eslint-disable-next-line react-hooks/exhaustive-deps`** at L1339. Extracting hooks will force confronting the real dependency list, which may surface latent bugs. Test carefully
-- The dependency array lists `[handleReset, onSimResetComplete, createBot, resizeGroundForBots, showSpeechBubble]` but the effect body references `scene`, `camera`, `renderer`, `controls` — all created inside the effect
-
-After extraction, `simulation/page.tsx` should drop from ~1,584 lines to roughly 200–300 lines of layout + panel wiring.
+- **`world:init` → `world:update` fallthrough** preserved with explicit `// eslint-disable-next-line no-fallthrough`
+- **`eslint-disable-next-line react-hooks/exhaustive-deps`** retained on the main setup useEffect (refs created inside the effect are not external dependencies)
+- Panel toggle states (`showFeed`, `showAirQuality`, etc.) kept in page component since they control JSX visibility, not simulation logic
 
 ---
 

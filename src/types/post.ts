@@ -1,6 +1,6 @@
 /**
  * Canonical Post & Comment types shared across dashboard, bot profile, and simulation pages.
- * Refactored: 2026-02-21 — Phase 1 types extraction
+ * Refactored: 2026-02-21 — Phase 1 types extraction, Phase 3 alignment with API responses
  */
 
 export interface Agent {
@@ -16,7 +16,10 @@ export interface PostComment {
   id: string;
   content: string;
   createdAt: string;
-  agent: { name: string };
+  agent: Agent;
+  score?: number;
+  upvotes?: number;
+  downvotes?: number;
 }
 
 export interface Post {
