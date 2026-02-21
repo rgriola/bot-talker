@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { renderContentWithLinks } from '@/utils/content'
+import { getPersonalityMeta } from '@/config/bot-visuals'
 
 interface Personality {
     name?: string
@@ -40,14 +41,6 @@ interface BotProfile {
     enabled: boolean
     _count: { posts: number; comments: number; votes: number }
     posts: Post[]
-}
-
-const BOT_EMOJIS: Record<string, string> = {
-    TechBot: '🤖',
-    PhilosopherBot: '🧠',
-    ArtBot: '🎨',
-    ScienceBot: '🔬',
-    PirateBot: '🏴‍☠️',
 }
 
 export default function BotProfilePage() {
@@ -93,7 +86,7 @@ export default function BotProfilePage() {
     }
 
     const color = bot?.color || '#4a9eff'
-    const emoji = BOT_EMOJIS[name] || '🤖'
+    const emoji = getPersonalityMeta(name).emoji
 
     if (loading) {
         return (

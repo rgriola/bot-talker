@@ -6,6 +6,30 @@
  */
 
 import * as THREE from 'three';
+import {
+  WATER_COLOR,
+  STALK_GREEN,
+  CORN_GOLD,
+  LEAF_GREEN,
+  DIRT_BROWN,
+  TRUNK_BROWN,
+  FOLIAGE_GREEN,
+  DIRT_DARK,
+  ROCK_GRAY,
+  GRAVEL_GRAY,
+  SUNDIAL_BASE,
+  SUNDIAL_DIAL,
+  SUNDIAL_MARKING,
+  SUNDIAL_BRONZE,
+  SUNDIAL_RING,
+  SHELTER_FLOOR,
+  SHELTER_WALL,
+  SHELTER_ROOF,
+  FOUNDATION_GRAY,
+  PLOT_TAN,
+  MAILBOX_POST,
+  MAILBOX_FLAG,
+} from '@/config/scene-colors';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -33,7 +57,7 @@ interface ShelterConfig {
 export function createWaterSpot(spot: SpotConfig): THREE.Mesh {
     const geo = new THREE.CircleGeometry(spot.radius, 32);
     const mat = new THREE.MeshStandardMaterial({
-        color: 0x2196f3,
+        color: WATER_COLOR,
         metalness: 0.8,
         roughness: 0.2,
         transparent: true,
@@ -65,7 +89,7 @@ export function createCornField(spot: SpotConfig): THREE.Group {
 
         // Green stalk
         const stalkGeo = new THREE.CylinderGeometry(0.03, 0.04, stalkHeight, 6);
-        const stalkMat = new THREE.MeshStandardMaterial({ color: 0x228b22, metalness: 0.1, roughness: 0.8 });
+        const stalkMat = new THREE.MeshStandardMaterial({ color: STALK_GREEN, metalness: 0.1, roughness: 0.8 });
         const stalk = new THREE.Mesh(stalkGeo, stalkMat);
         stalk.position.set(sx, stalkHeight / 2, sz);
         stalk.rotation.x = Math.sin(i * 1.3) * 0.1;
@@ -75,7 +99,7 @@ export function createCornField(spot: SpotConfig): THREE.Group {
 
         // Yellow corn cob
         const cobGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.2, 8);
-        const cobMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.2, roughness: 0.6 });
+        const cobMat = new THREE.MeshStandardMaterial({ color: CORN_GOLD, metalness: 0.2, roughness: 0.6 });
         const cob = new THREE.Mesh(cobGeo, cobMat);
         cob.position.set(sx, stalkHeight - 0.05, sz);
         cob.rotation.x = stalk.rotation.x;
@@ -84,7 +108,7 @@ export function createCornField(spot: SpotConfig): THREE.Group {
 
         // Green leaf/husk
         const leafGeo = new THREE.ConeGeometry(0.08, 0.15, 4);
-        const leafMat = new THREE.MeshStandardMaterial({ color: 0x32cd32, metalness: 0.1, roughness: 0.9, side: THREE.DoubleSide });
+        const leafMat = new THREE.MeshStandardMaterial({ color: LEAF_GREEN, metalness: 0.1, roughness: 0.9, side: THREE.DoubleSide });
         const leaf = new THREE.Mesh(leafGeo, leafMat);
         leaf.position.set(sx, stalkHeight + 0.05, sz);
         leaf.rotation.x = Math.PI + stalk.rotation.x;
@@ -93,7 +117,7 @@ export function createCornField(spot: SpotConfig): THREE.Group {
 
     // Dirt patch underneath
     const dirtGeo = new THREE.CircleGeometry(spot.radius, 16);
-    const dirtMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, metalness: 0.0, roughness: 1.0 });
+    const dirtMat = new THREE.MeshStandardMaterial({ color: DIRT_BROWN, metalness: 0.0, roughness: 1.0 });
     const dirt = new THREE.Mesh(dirtGeo, dirtMat);
     dirt.rotation.x = -Math.PI / 2;
     dirt.position.y = 0.01;
@@ -121,7 +145,7 @@ export function createForest(spot: SpotConfig): THREE.Group {
         // Trunk
         const trunkHeight = 1.2 + (i % 3) * 0.3;
         const trunkGeo = new THREE.CylinderGeometry(0.1, 0.15, trunkHeight, 8);
-        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, metalness: 0.0, roughness: 0.9 });
+        const trunkMat = new THREE.MeshStandardMaterial({ color: TRUNK_BROWN, metalness: 0.0, roughness: 0.9 });
         const trunk = new THREE.Mesh(trunkGeo, trunkMat);
         trunk.position.y = trunkHeight / 2;
         trunk.castShadow = true;
@@ -130,7 +154,7 @@ export function createForest(spot: SpotConfig): THREE.Group {
         // Foliage
         const foliageHeight = 1.0 + (i % 2) * 0.4;
         const foliageGeo = new THREE.ConeGeometry(0.5, foliageHeight, 8);
-        const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228b22, metalness: 0.0, roughness: 0.8 });
+        const foliageMat = new THREE.MeshStandardMaterial({ color: FOLIAGE_GREEN, metalness: 0.0, roughness: 0.8 });
         const foliage = new THREE.Mesh(foliageGeo, foliageMat);
         foliage.position.y = trunkHeight + foliageHeight / 2 - 0.2;
         foliage.castShadow = true;
@@ -141,7 +165,7 @@ export function createForest(spot: SpotConfig): THREE.Group {
 
     // Dirt patch
     const dirtGeo = new THREE.CircleGeometry(spot.radius, 16);
-    const dirtMat = new THREE.MeshStandardMaterial({ color: 0x654321, metalness: 0.0, roughness: 1.0 });
+    const dirtMat = new THREE.MeshStandardMaterial({ color: DIRT_DARK, metalness: 0.0, roughness: 1.0 });
     const dirt = new THREE.Mesh(dirtGeo, dirtMat);
     dirt.rotation.x = -Math.PI / 2;
     dirt.position.y = 0.01;
@@ -165,7 +189,7 @@ export function createQuarry(spot: SpotConfig): THREE.Group {
         const rockSize = 0.2 + (i % 3) * 0.15;
 
         const rockGeo = new THREE.DodecahedronGeometry(rockSize, 0);
-        const rockMat = new THREE.MeshStandardMaterial({ color: 0x808080, metalness: 0.1, roughness: 0.9 });
+        const rockMat = new THREE.MeshStandardMaterial({ color: ROCK_GRAY, metalness: 0.1, roughness: 0.9 });
         const rock = new THREE.Mesh(rockGeo, rockMat);
         rock.position.set(rx, rockSize * 0.5, rz);
         rock.rotation.x = i * 0.5;
@@ -176,7 +200,7 @@ export function createQuarry(spot: SpotConfig): THREE.Group {
 
     // Gravel patch
     const gravelGeo = new THREE.CircleGeometry(spot.radius, 16);
-    const gravelMat = new THREE.MeshStandardMaterial({ color: 0x696969, metalness: 0.0, roughness: 1.0 });
+    const gravelMat = new THREE.MeshStandardMaterial({ color: GRAVEL_GRAY, metalness: 0.0, roughness: 1.0 });
     const gravel = new THREE.Mesh(gravelGeo, gravelMat);
     gravel.rotation.x = -Math.PI / 2;
     gravel.position.y = 0.01;
@@ -196,7 +220,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
 
     // Circular base platform
     const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius * 1.1, 0.15, 32);
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x8b8b83, metalness: 0.1, roughness: 0.9 });
+    const baseMat = new THREE.MeshStandardMaterial({ color: SUNDIAL_BASE, metalness: 0.1, roughness: 0.9 });
     const base = new THREE.Mesh(baseGeo, baseMat);
     base.position.y = 0.075;
     base.castShadow = true;
@@ -205,7 +229,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
 
     // Dial face
     const dialGeo = new THREE.CircleGeometry(baseRadius * 0.9, 32);
-    const dialMat = new THREE.MeshStandardMaterial({ color: 0xf5f5dc, metalness: 0.0, roughness: 0.7 });
+    const dialMat = new THREE.MeshStandardMaterial({ color: SUNDIAL_DIAL, metalness: 0.0, roughness: 0.7 });
     const dial = new THREE.Mesh(dialGeo, dialMat);
     dial.rotation.x = -Math.PI / 2;
     dial.position.y = 0.16;
@@ -215,7 +239,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
     for (let h = 0; h < 12; h++) {
         const angle = (h / 12) * Math.PI * 2 - Math.PI / 2;
         const lineGeo = new THREE.BoxGeometry(0.02, 0.01, baseRadius * 0.3);
-        const lineMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.0, roughness: 0.8 });
+        const lineMat = new THREE.MeshStandardMaterial({ color: SUNDIAL_MARKING, metalness: 0.0, roughness: 0.8 });
         const line = new THREE.Mesh(lineGeo, lineMat);
         line.position.x = Math.cos(angle) * baseRadius * 0.65;
         line.position.z = Math.sin(angle) * baseRadius * 0.65;
@@ -228,7 +252,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
     const gnomonHeight = 3.0;
     const gnomonGeo = new THREE.CylinderGeometry(0.01, 0.08, gnomonHeight, 4);
     const gnomonMat = new THREE.MeshStandardMaterial({
-        color: 0xcd7f32,
+        color: SUNDIAL_BRONZE,
         metalness: 0.7,
         roughness: 0.2
     });
@@ -245,7 +269,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
 
     // North Chevron indicator (12 o'clock position)
     const chevronGroup = new THREE.Group();
-    const chevMat = new THREE.MeshStandardMaterial({ color: 0xcd7f32, metalness: 0.8, roughness: 0.2 });
+    const chevMat = new THREE.MeshStandardMaterial({ color: SUNDIAL_BRONZE, metalness: 0.8, roughness: 0.2 });
     const chevPart1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.01, 0.2), chevMat);
     const chevPart2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.01, 0.2), chevMat);
 
@@ -261,7 +285,7 @@ export function createSundial(config: { x: number; z: number; radius: number }):
 
     // Decorative ring
     const ringGeo = new THREE.TorusGeometry(baseRadius * 1.05, 0.03, 8, 32);
-    const ringMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, metalness: 0.3, roughness: 0.7 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: SUNDIAL_RING, metalness: 0.3, roughness: 0.7 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.08;
@@ -290,12 +314,12 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
     if (shelter.built) {
         // Complete hut
         const floorGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
-        const floorMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, metalness: 0.0, roughness: 0.9 });
+        const floorMat = new THREE.MeshStandardMaterial({ color: SHELTER_FLOOR, metalness: 0.0, roughness: 0.9 });
         const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.position.y = 0.05;
         shelterObj.add(floor);
 
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0xa0522d, metalness: 0.0, roughness: 0.8 });
+        const wallMat = new THREE.MeshStandardMaterial({ color: SHELTER_WALL, metalness: 0.0, roughness: 0.8 });
         const wallGeo = new THREE.BoxGeometry(0.9, 0.8, 0.08);
         const backWall = new THREE.Mesh(wallGeo, wallMat);
         backWall.position.set(0, 0.5, -0.42);
@@ -349,7 +373,7 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
         rightWall.position.set(0.42, 0.5, 0);
         shelterObj.add(rightWall);
 
-        const roofMat = new THREE.MeshStandardMaterial({ color: 0x654321, metalness: 0.0, roughness: 0.9, side: THREE.DoubleSide });
+        const roofMat = new THREE.MeshStandardMaterial({ color: SHELTER_ROOF, metalness: 0.0, roughness: 0.9, side: THREE.DoubleSide });
         const roofGeo = new THREE.BoxGeometry(1.1, 0.08, 0.7);
         const leftRoof = new THREE.Mesh(roofGeo, roofMat);
         leftRoof.position.set(0, 1.0, -0.22);
@@ -385,13 +409,13 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
         // Under construction
         const progress = shelter.buildProgress / 100;
         const foundationGeo = new THREE.BoxGeometry(1.0, 0.1, 1.0);
-        const foundationMat = new THREE.MeshStandardMaterial({ color: 0x808080, metalness: 0.1, roughness: 0.9 });
+        const foundationMat = new THREE.MeshStandardMaterial({ color: FOUNDATION_GRAY, metalness: 0.1, roughness: 0.9 });
         const foundation = new THREE.Mesh(foundationGeo, foundationMat);
         foundation.position.y = 0.05;
         shelterObj.add(foundation);
 
         if (progress > 0.3) {
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0xa0522d, transparent: true, opacity: Math.min(1, progress * 1.5) });
+            const wallMat = new THREE.MeshStandardMaterial({ color: SHELTER_WALL, transparent: true, opacity: Math.min(1, progress * 1.5) });
             const wallHeight = Math.min(0.8, progress * 1.6);
             const wallGeo = new THREE.BoxGeometry(0.9, wallHeight, 0.08);
             const wall = new THREE.Mesh(wallGeo, wallMat);
@@ -401,7 +425,7 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
     } else {
         // Empty build plot
         const plotGeo = new THREE.CircleGeometry(0.5, 16);
-        const plotMat = new THREE.MeshStandardMaterial({ color: 0x8b7355, metalness: 0.0, roughness: 1.0 });
+        const plotMat = new THREE.MeshStandardMaterial({ color: PLOT_TAN, metalness: 0.0, roughness: 1.0 });
         const plot = new THREE.Mesh(plotGeo, plotMat);
         plot.rotation.x = -Math.PI / 2;
         plot.position.y = 0.02;
@@ -416,7 +440,7 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
 
         // Mailbox Post
         const postGeo = new THREE.BoxGeometry(0.04, 0.6, 0.04);
-        const postMat = new THREE.MeshStandardMaterial({ color: 0x4a2c1d, metalness: 0.0, roughness: 1.0 });
+        const postMat = new THREE.MeshStandardMaterial({ color: MAILBOX_POST, metalness: 0.0, roughness: 1.0 });
         const post = new THREE.Mesh(postGeo, postMat);
         post.position.y = 0.3;
         mailboxGroup.add(post);
@@ -442,7 +466,7 @@ export function buildShelterMesh(shelter: ShelterConfig, shelterObj: THREE.Group
 
         // Flag (Red)
         const flagGeo = new THREE.BoxGeometry(0.01, 0.08, 0.04);
-        const flagMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const flagMat = new THREE.MeshStandardMaterial({ color: MAILBOX_FLAG });
         const flag = new THREE.Mesh(flagGeo, flagMat);
         flag.position.set(0.08, 0.7, 0.05);
         mailboxGroup.add(flag);

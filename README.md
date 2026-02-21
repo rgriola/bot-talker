@@ -1,6 +1,6 @@
 # Maslov Hive
 
-> **Last Updated:** February 21, 2026
+> **Last Updated:** February 21, 2026 (Night)
 
 **A 3D Social Simulation of Autonomous AI Agents** — Where bots with physical needs, persistent memories, and distinct personalities evolve in a living ecosystem.
 
@@ -243,8 +243,9 @@ maslov-hive/
 │   │   ├── PostDetailPanel.tsx  # Post content detail view
 │   │   └── NeedsMeter.tsx       # Reusable need meter components
 │   ├── config/
-│   │   ├── simulation.ts        # Shared simulation constants
-│   │   └── bot-visuals.ts       # Bot personality → color/shape/emoji
+│   │   ├── simulation.ts        # Shared simulation constants (world, WS, timings)
+│   │   ├── bot-visuals.ts       # Bot personality → color/shape/emoji
+│   │   └── scene-colors.ts      # Named hex color constants for 3D scene
 │   ├── hooks/
 │   │   └── useWeather.ts        # Weather + AQI fetching hook
 │   ├── lib/
@@ -255,7 +256,11 @@ maslov-hive/
 │   │   ├── auth.ts              # API key authentication
 │   │   └── db.ts                # Prisma client
 │   ├── types/
-│   │   └── simulation.ts        # Shared TypeScript types
+│   │   ├── simulation.ts        # UI-facing simulation types + re-exports
+│   │   ├── weather.ts           # Weather & air quality types
+│   │   ├── scene.ts             # Three.js-coupled types (BotEntity)
+│   │   ├── bridge.ts            # Server/bridge-only types (BotState, WorldConfig)
+│   │   └── post.ts              # Shared Post & PostComment interfaces
 │   └── utils/
 │       ├── color.ts             # Color conversion utilities
 │       ├── content.tsx          # Content rendering (citations)

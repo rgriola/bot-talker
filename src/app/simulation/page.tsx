@@ -12,11 +12,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 // Types
 import type {
   BotData,
-  BotEntity,
   ActivityMessage,
   SelectedBotInfo,
   PostDetail,
+  ShelterData,
 } from '@/types/simulation';
+import type { BotEntity } from '@/types/scene';
 
 // Utilities
 import { rgbToHex } from '@/utils/color';
@@ -24,6 +25,26 @@ import { calculateSunPosition } from '@/utils/solar';
 
 // Config
 import { getPersonalityMeta, createBotGeometry } from '@/config/bot-visuals';
+import {
+  DEFAULT_LOCATION,
+  WORLD_CONFIG,
+  SCENE_CONFIG,
+  WS_DEFAULT_URL,
+  WS_RECONNECT_MS,
+  SPEECH_BUBBLE_MS,
+  FEED_MAX_ITEMS,
+} from '@/config/simulation';
+import {
+  GROUND_COLOR,
+  GRID_LINE_COLOR,
+  GRID_CENTER_COLOR,
+  SKY_BLUE,
+  AMBIENT_NIGHT,
+  MOONLIGHT,
+  ACCENT_BLUE_3D,
+  ACCENT_PURPLE_3D,
+  CLOUD_GRAY,
+} from '@/config/scene-colors';
 
 // Hooks
 import { useWeather } from '@/hooks/useWeather';
@@ -200,12 +221,12 @@ export default function SimulationPage() {
   useEffect(() => {
     if (!sceneRef.current || !sunLightRef.current || !ambientLightRef.current || !currentTime) return;
 
-    const lat = location?.lat ?? 40.7128; // Default NYC if no location
-    const lng = location?.lng ?? -74.006;
+    const lat = location?.lat ?? DEFAULT_LOCATION.lat;
+    const lng = location?.lng ?? DEFAULT_LOCATION.lng;
     const { altitude, azimuth } = calculateSunPosition(currentTime, lat, lng);
 
-    // Sun position in 3D space (radius 25 from origin)
-    const sunRadius = 25;
+    // Sun position in 3D space
+    const sunRadius = SCENE_CONFIG.SUN_RADIUS;
     const sunX = sunRadius * Math.cos(altitude) * Math.sin(azimuth);
     const sunY = sunRadius * Math.sin(altitude);
     const sunZ = sunRadius * Math.cos(altitude) * Math.cos(azimuth);
@@ -291,8 +312,8 @@ export default function SimulationPage() {
       };
     }
 
-    const lat = location?.lat ?? 40.7128;
-    const lng = location?.lng ?? -74.006;
+    const lat = location?.lat ?? DEFAULT_LOCATION.lat;
+    const lng = location?.lng ?? DEFAULT_LOCATION.lng;
     const { altitude } = calculateSunPosition(currentTime, lat, lng);
 
     // Normalize: 0 = midnight, 1 = noon
@@ -452,14 +473,9 @@ export default function SimulationPage() {
 
   // ─── Dynamic Ground Sizing Based on Bot Count ────────────────
   const calculateGroundSize = useCallback((botCount: number): number => {
-    // 75 square meters per bot
-    // Side length = √(botCount × 75)
-    const SQUARE_METERS_PER_BOT = 75;
-    const MIN_SIZE = 10; // minimum 10x10 for empty world
-
-    const area = Math.max(1, botCount) * SQUARE_METERS_PER_BOT;
+    const area = Math.max(1, botCount) * WORLD_CONFIG.SQ_METERS_PER_BOT;
     const size = Math.sqrt(area);
-    return Math.max(MIN_SIZE, Math.round(size));
+    return Math.max(WORLD_CONFIG.MIN_GROUND_SIZE, Math.round(size));
   }, []);
 
   const resizeGroundForBots = useCallback(() => {
@@ -481,7 +497,7 @@ export default function SimulationPage() {
     scene.remove(gridRef.current);
     gridRef.current.geometry.dispose();
     gridRef.current.material.dispose();
-    const newGrid = new THREE.GridHelper(size, Math.round(size), 0x1a6b2a, 0x238636);
+    const newGrid = new THREE.GridHelper(size, Math.round(size), GRID_LINE_COLOR, GRID_CENTER_COLOR);
     newGrid.position.y = 0.01;
     scene.add(newGrid);
     gridRef.current = newGrid;
@@ -511,7 +527,7 @@ export default function SimulationPage() {
     const h = data.height || 1.0;
     const botColor = data.color
       ? new THREE.Color(data.color)
-      : new THREE.Color(0x4a9eff);
+      : new THREE.Color(ACCENT_BLUE_3D);
     const emissiveColor = botColor.clone().multiplyScalar(0.3);
 
     // Create group
@@ -597,7 +613,7 @@ export default function SimulationPage() {
 
     setTimeout(() => {
       entity.speechBubble.style.display = 'none';
-    }, 6000);
+    }, SPEECH_BUBBLE_MS);
   }, []);
 
   // ─── Data Sync for All Bots Panel ────────────────────────────
@@ -620,8 +636,8 @@ export default function SimulationPage() {
 
     // ─── Scene ─────────────────────────────────────────
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb);
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
+    scene.background = new THREE.Color(SKY_BLUE);
+    scene.fog = new THREE.FogExp2(SKY_BLUE, 0.012);
     sceneRef.current = scene;
 
     // ─── Camera ────────────────────────────────────────
@@ -661,10 +677,10 @@ export default function SimulationPage() {
     controlsRef.current = controls;
 
     // ─── Ground (sized dynamically based on bot count) ───
-    const defaultSize = 20; // initial default; auto-resized when bots are added
+    const defaultSize = SCENE_CONFIG.INITIAL_GROUND_SIZE;
     const groundGeo = new THREE.PlaneGeometry(defaultSize, defaultSize);
     const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x2d8c3c,
+      color: GROUND_COLOR,
       metalness: 0.05,
       roughness: 0.95,
     });
@@ -675,13 +691,13 @@ export default function SimulationPage() {
     groundRef.current = ground;
 
     // Grid: 1 cell = 1 meter
-    const grid = new THREE.GridHelper(defaultSize, defaultSize, 0x1a6b2a, 0x238636);
+    const grid = new THREE.GridHelper(defaultSize, defaultSize, GRID_LINE_COLOR, GRID_CENTER_COLOR);
     grid.position.y = 0.01;
     scene.add(grid);
     gridRef.current = grid;
 
     // ─── Lighting (dynamic sun/moon based on user location/time) ───
-    const ambientLight = new THREE.AmbientLight(0x334466, 0.8);
+    const ambientLight = new THREE.AmbientLight(AMBIENT_NIGHT, 0.8);
     scene.add(ambientLight);
     ambientLightRef.current = ambientLight;
 
@@ -701,7 +717,7 @@ export default function SimulationPage() {
     sunLightRef.current = sunLight;
 
     // Moon light (for nighttime, softer shadows)
-    const moonLight = new THREE.DirectionalLight(0x8899bb, 0.3);
+    const moonLight = new THREE.DirectionalLight(MOONLIGHT, 0.3);
     moonLight.position.set(-10, 15, -10);
     moonLight.castShadow = true;
     moonLight.shadow.mapSize.width = 1024;
@@ -717,11 +733,11 @@ export default function SimulationPage() {
     moonLightRef.current = moonLight;
 
     // Accent lights
-    const pointLight1 = new THREE.PointLight(0x4a9eff, 0.5, 30);
+    const pointLight1 = new THREE.PointLight(ACCENT_BLUE_3D, 0.5, 30);
     pointLight1.position.set(-10, 5, -10);
     scene.add(pointLight1);
 
-    const pointLight2 = new THREE.PointLight(0xb366ff, 0.5, 30);
+    const pointLight2 = new THREE.PointLight(ACCENT_PURPLE_3D, 0.5, 30);
     pointLight2.position.set(10, 5, 10);
     scene.add(pointLight2);
 
@@ -743,7 +759,7 @@ export default function SimulationPage() {
     rainGeometry.setAttribute('velocity', new THREE.BufferAttribute(rainVelocities, 1));
 
     const rainMaterial = new THREE.PointsMaterial({
-      color: 0x6699cc,
+      color: CLOUD_GRAY,
       size: 0.1,
       transparent: true,
       opacity: 0.6,
@@ -963,10 +979,10 @@ export default function SimulationPage() {
             entity.speechBubble.textContent = entity.recentPost.text;
             entity.speechBubble.style.display = 'block';
 
-            // Auto-hide after 8 seconds
+            // Auto-hide after speech bubble timeout
             setTimeout(() => {
               entity.speechBubble.style.display = 'none';
-            }, 8000);
+            }, SPEECH_BUBBLE_MS);
 
             // Select in detail panel
             setSelectedPost(entity.recentPost);
@@ -1011,7 +1027,7 @@ export default function SimulationPage() {
 
     function connectWebSocket() {
       if (disposed) return;
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || WS_DEFAULT_URL;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -1055,7 +1071,7 @@ export default function SimulationPage() {
                   scene.remove(gridRef.current);
                   gridRef.current.dispose();
                   // 1 cell = 1 meter
-                  const newGrid = new THREE.GridHelper(diameter, Math.round(diameter), 0x1a6b2a, 0x238636);
+                  const newGrid = new THREE.GridHelper(diameter, Math.round(diameter), GRID_LINE_COLOR, GRID_CENTER_COLOR);
                   newGrid.position.y = 0.01;
                   scene.add(newGrid);
                   gridRef.current = newGrid;
@@ -1113,18 +1129,6 @@ export default function SimulationPage() {
 
                 // Render shelters (huts) - dynamic, update on each tick
                 if (msg.data.worldConfig.shelters) {
-                  interface ShelterData {
-                    id: string;
-                    type: string;
-                    x: number;
-                    z: number;
-                    built: boolean;
-                    buildProgress: number;
-                    ownerId: string | null;
-                    ownerName?: string;
-                    ownerColor?: string;
-                    isOccupied?: boolean;
-                  }
                   msg.data.worldConfig.shelters.forEach((shelter: ShelterData) => {
                     let shelterObj = sheltersRef.current.get(shelter.id);
                     if (!shelterObj) {
@@ -1264,7 +1268,7 @@ export default function SimulationPage() {
                 }
 
                 const next = [activityMsg, ...prev];
-                return next.slice(0, 50);
+                return next.slice(0, FEED_MAX_ITEMS);
               });
               break;
             }
@@ -1282,7 +1286,7 @@ export default function SimulationPage() {
           statusRef.current.textContent = '🔴 Retrying ... signal';
           statusRef.current.style.color = '#f87171';
         }
-        reconnectTimer = setTimeout(connectWebSocket, 3000);
+        reconnectTimer = setTimeout(connectWebSocket, WS_RECONNECT_MS);
       };
 
       ws.onerror = () => {

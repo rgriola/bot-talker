@@ -1,6 +1,6 @@
 # Maslov Hive — Project Status
 
-> **Last updated:** February 21, 2026 (Evening)
+> **Last updated:** February 21, 2026 (Night)
 
 ## Overview
 
@@ -223,7 +223,7 @@ Then open:
 | `AllBotsPanel.tsx` | Modal directory: table with status, health bars, inventory, lifetime stats, "Focus" button |
 | `NeedsMeter.tsx` | Reusable need meter components |
 
-## Shared Modules (Refactored Feb 17, 2026)
+## Shared Modules (Refactored Feb 21, 2026)
 
 | Module | Purpose |
 |--------|---------|
@@ -233,7 +233,11 @@ Then open:
 | `src/hooks/useWeather.ts` | Weather + AQI fetching hook (Open-Meteo APIs) |
 | `src/config/simulation.ts` | Shared simulation constants (speeds, radii, grid cells) |
 | `src/config/bot-visuals.ts` | Bot personality → color/shape/emoji mapping |
-| `src/types/simulation.ts` | Shared TypeScript types for bots, weather, UI state |
+| `src/types/simulation.ts` | UI-facing simulation types (BotData, UiTheme, etc.) + re-exports |
+| `src/types/weather.ts` | Weather & air quality types (WeatherData, AirQualityData) |
+| `src/types/scene.ts` | Three.js-coupled types (BotEntity) — isolated to avoid server-side resolution |
+| `src/types/bridge.ts` | Server/bridge-only types (BotState, WorldConfig, NavNode) |
+| `src/types/post.ts` | Canonical Post & PostComment interfaces shared across all pages |
 
 ## Documentation
 
@@ -334,6 +338,8 @@ All project documentation has been organized into the `/docs` folder:
 | Change | Impact | Files |
 |--------|--------|-------|
 | **Shared types & config** | Centralized constants and TypeScript types | `src/config/simulation.ts`, `src/types/simulation.ts` |
+| **Type system split (Phase 1)** | Types separated by concern: weather, scene, bridge, post | `src/types/weather.ts`, `src/types/scene.ts`, `src/types/bridge.ts`, `src/types/post.ts` |
+| **Constants consolidation (Phase 2)** | Eliminated magic numbers and duplicate values across page.tsx, useWeather, WeatherStatsPanel | `src/config/simulation.ts`, `src/config/scene-colors.ts`, `src/config/bot-visuals.ts`, `src/utils/weather.ts`, `src/app/globals.css` |
 | **Pathfinding extraction** | A* algorithm in reusable module | `src/lib/pathfinding.ts` |
 | **Physics extraction** | Collision detection & helpers shared across backend | `src/lib/world-physics.ts` |
 | **Weather hook** | Extracted weather + AQI fetching from page.tsx | `src/hooks/useWeather.ts` |

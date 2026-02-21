@@ -1,5 +1,6 @@
 import React from 'react';
 import { WeatherData, UiTheme } from '@/types/simulation';
+import { getWeatherEmoji, getAQIColor, getAqiLabel } from '@/utils/weather';
 
 interface WeatherStatsPanelProps {
     weather: WeatherData;
@@ -9,38 +10,7 @@ interface WeatherStatsPanelProps {
 export const WeatherStatsPanel: React.FC<WeatherStatsPanelProps> = ({ weather, uiTheme }) => {
     if (!weather) return null;
 
-    // Helper to get weather icon based on condition/code and day/night
-    const getWeatherIcon = (weather: WeatherData) => {
-        if (weather.isStormy) return '⛈️';
-        if (weather.isSnowing) return '❄️';
-        if (weather.isRaining) return '🌧️';
-        if (weather.isFoggy) return '🌫️';
-        if (weather.isCloudy) return '☁️';
-        if (!weather.isDay) return '🌙';
-        return '☀️';
-    };
-
-    const icon = getWeatherIcon(weather);
-
-    // Helper for AQI color
-    const getAqiColor = (aqi: number) => {
-        if (aqi <= 50) return '#4caf50'; // Good
-        if (aqi <= 100) return '#ffeb3b'; // Moderate
-        if (aqi <= 150) return '#ff9800'; // Unhealthy for Sensitive Groups
-        if (aqi <= 200) return '#f44336'; // Unhealthy
-        if (aqi <= 300) return '#9c27b0'; // Very Unhealthy
-        return '#795548'; // Hazardous
-    };
-
-    // Helper for AQI Label if not provided
-    const getAqiLabel = (aqi: number) => {
-        if (aqi <= 50) return 'Good';
-        if (aqi <= 100) return 'Moderate';
-        if (aqi <= 150) return 'Sensitive';
-        if (aqi <= 200) return 'Unhealthy';
-        if (aqi <= 300) return 'Very Unhealthy';
-        return 'Hazardous';
-    };
+    const icon = getWeatherEmoji(weather);
 
     return (
         <div style={{
@@ -104,7 +74,7 @@ export const WeatherStatsPanel: React.FC<WeatherStatsPanelProps> = ({ weather, u
                 <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ fontSize: '10px', color: uiTheme.textSecondary, textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>AQI</div>
                     {weather.airQuality ? (
-                        <div style={{ fontSize: '16px', fontWeight: 700, color: getAqiColor(weather.airQuality.us_aqi) }}>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: getAQIColor(weather.airQuality.us_aqi) }}>
                             {weather.airQuality.us_aqi}
                         </div>
                     ) : (
@@ -125,7 +95,7 @@ export const WeatherStatsPanel: React.FC<WeatherStatsPanelProps> = ({ weather, u
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <span>Pollutants:</span>
-                        <span style={{ color: getAqiColor(weather.airQuality.us_aqi), fontWeight: 600 }}>
+                        <span style={{ color: getAQIColor(weather.airQuality.us_aqi), fontWeight: 600 }}>
                             {weather.airQuality.quality_label || getAqiLabel(weather.airQuality.us_aqi)}
                         </span>
                     </div>

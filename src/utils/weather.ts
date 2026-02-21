@@ -24,18 +24,35 @@ export function getWeatherEmoji(weather: WeatherData): string {
 }
 
 /**
- * Get AQI (Air Quality Index) color based on EPA standards
- * 
+ * Get AQI (Air Quality Index) color using Material Design palette.
+ * Canonical source — used by WeatherStatsPanel, AirQualityPanel, etc.
+ *
  * @param aqi US AQI value (0-500+)
  * @returns Hex color representing air quality level
  */
 export function getAQIColor(aqi: number): string {
-  if (aqi <= 50) return '#00e400';      // Green - Good
-  if (aqi <= 100) return '#ffff00';     // Yellow - Moderate
-  if (aqi <= 150) return '#ff7e00';     // Orange - Unhealthy for Sensitive Groups
-  if (aqi <= 200) return '#ff0000';     // Red - Unhealthy
-  if (aqi <= 300) return '#8f3f97';     // Purple - Very Unhealthy
-  return '#7e0023';                      // Maroon - Hazardous
+  if (aqi <= 50) return '#4caf50';      // Green - Good
+  if (aqi <= 100) return '#ffeb3b';     // Yellow - Moderate
+  if (aqi <= 150) return '#ff9800';     // Orange - Unhealthy for Sensitive Groups
+  if (aqi <= 200) return '#f44336';     // Red - Unhealthy
+  if (aqi <= 300) return '#9c27b0';     // Purple - Very Unhealthy
+  return '#795548';                      // Brown - Hazardous
+}
+
+/**
+ * Get human-readable AQI label.
+ * Canonical source — replaces local copies in useWeather.ts and WeatherStatsPanel.tsx.
+ *
+ * @param aqi US AQI value (0-500+)
+ * @returns Short quality label
+ */
+export function getAqiLabel(aqi: number): string {
+  if (aqi <= 50) return 'Good';
+  if (aqi <= 100) return 'Moderate';
+  if (aqi <= 150) return 'Sensitive';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very Unhealthy';
+  return 'Hazardous';
 }
 
 /**

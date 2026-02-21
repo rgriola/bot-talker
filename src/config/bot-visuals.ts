@@ -20,10 +20,31 @@ export const PERSONALITY_META: Record<string, { emoji: string; label: string }> 
 };
 
 /**
- * Get personality emoji + label with fallback.
+ * Map full bot names (e.g. "TechBot") to short personality keys.
+ * Used by bot profile and other pages that know the agent name but not the personality ID.
  */
-export function getPersonalityMeta(personality: string): { emoji: string; label: string } {
-  return PERSONALITY_META[personality.toLowerCase()] || { emoji: '🤖', label: 'Unknown' };
+const BOT_NAME_TO_KEY: Record<string, string> = {
+  TechBot: 'tech',
+  PhilosopherBot: 'philo',
+  ArtBot: 'art',
+  ScienceBot: 'science',
+  PirateBot: 'pirate',
+};
+
+/**
+ * Get personality emoji + label with fallback.
+ * Accepts either a short key ("tech") or full bot name ("TechBot").
+ */
+export function getPersonalityMeta(nameOrKey: string): { emoji: string; label: string } {
+  // Try short key first
+  const direct = PERSONALITY_META[nameOrKey.toLowerCase()];
+  if (direct) return direct;
+
+  // Try full bot name mapping
+  const key = BOT_NAME_TO_KEY[nameOrKey];
+  if (key) return PERSONALITY_META[key];
+
+  return { emoji: '🤖', label: 'Unknown' };
 }
 
 /**

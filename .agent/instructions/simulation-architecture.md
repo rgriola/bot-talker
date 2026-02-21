@@ -1,10 +1,13 @@
 # Case Study: Maslov Hive Simulation Architecture
 
+> **Last updated:** February 21, 2026
+
 This document summarizes the simulation architecture for AI agents maintaining this codebase.
 
-# a. Referece files
+# a. Reference files
 - **PROJECT_STATUS.md** - Project status and progress
 - **README.md** - Project overview and setup instructions
+- **docs/refactor-simulation-plan.md** - Active refactor plan (Phases 1-2 complete)
 
 ## 🏗️ Core Architecture (The "Agentic Trinity")
 
@@ -57,3 +60,31 @@ export function simulateMovement() {
 3. **DT is King**. All physics and metabolism calculations MUST be scaled by `dt` to ensure consistency across different simulation speeds (1x, 2x, 4x).
 4. **Clean Transitions**. Use `transitionState(bot, newState)` in `brain.ts` to fire entry/exit hooks correctly.
 5. **Broadcast Responsibility**. The main loop in `movement.ts` is responsible for calling `broadcastBotPositions()` after all engines have ticked.
+
+## 📦 Type System Architecture (Refactored Feb 21, 2026)
+
+Types are split by concern to avoid coupling (e.g. Three.js types forcing resolution on server code):
+
+| File | Scope | Key Types |
+|------|-------|-----------|
+| `src/types/simulation.ts` | UI-facing simulation types + re-exports | `BotData`, `BotNeeds`, `ShelterData`, `ActivityMessage`, `PostDetail`, `SelectedBotInfo`, `UiTheme` |
+| `src/types/weather.ts` | Weather & air quality | `WeatherData`, `AirQualityData` |
+| `src/types/scene.ts` | Three.js-coupled renderer types | `BotEntity` |
+| `src/types/bridge.ts` | Server/bridge-only (scripts/) | `BotState`, `WorldConfig`, `NavNode` |
+| `src/types/post.ts` | Shared across dashboard, bot profile, simulation | `Post`, `PostComment`, `Agent` |
+
+**Backward compatibility**: `simulation.ts` re-exports all moved types, so existing imports continue to work. New code should import from the specific module.
+
+## 📐 Constants Architecture (Refactored Feb 21, 2026)
+
+Constants are centralized to eliminate magic numbers and duplicated values:
+
+| File | Scope | Key Constants |
+|------|-------|---------------|
+| `src/config/simulation.ts` | Simulation engine | `DEFAULT_LOCATION`, `WORLD_CONFIG`, `SCENE_CONFIG`, `BOT_PHYSICS`, `WS_DEFAULT_URL`, `WS_RECONNECT_MS`, `SPEECH_BUBBLE_MS`, `FEED_MAX_ITEMS` |
+| `src/config/scene-colors.ts` | Three.js material colors | `GROUND_COLOR`, `WATER_COLOR`, `FOLIAGE_GREEN`, `SUNDIAL_BRONZE`, `SKY_BLUE`, `ACCENT_BLUE_3D`, etc. |
+| `src/config/bot-visuals.ts` | Bot appearance & personality | `PERSONALITY_META`, `getPersonalityMeta()` (accepts short keys + full bot names) |
+| `src/utils/weather.ts` | Weather utilities | `getAQIColor()` (Material Design), `getAqiLabel()`, `getWeatherEmoji()`, `WEATHER_CONDITIONS`, `isRainCode/isSnowCode/isFogCode/isStormCode` |
+| `src/app/globals.css` | CSS design tokens | `--accent-blue`, `--bg-dark`, `--status-green`, `--status-red`, `--panel-bg`, etc. |
+
+**Weather note**: `scripts/weather.ts` maintains its own copy of `getAQIColor` (same Material Design palette) because it runs as a standalone Node.js script outside the Next.js module system.

@@ -171,15 +171,16 @@ export async function getAirQuality(lat: number, lng: number): Promise<AirQualit
 }
 
 /**
- * Get AQI color for UI display
+ * Get AQI color for UI display (Material Design palette)
+ * Note: canonical frontend version lives in src/utils/weather.ts
  */
 export function getAQIColor(aqi: number): string {
-  if (aqi <= 50) return '#00e400';      // Green
-  if (aqi <= 100) return '#ffff00';     // Yellow
-  if (aqi <= 150) return '#ff7e00';     // Orange
-  if (aqi <= 200) return '#ff0000';     // Red
-  if (aqi <= 300) return '#8f3f97';     // Purple
-  return '#7e0023';                      // Maroon
+  if (aqi <= 50) return '#4caf50';      // Green
+  if (aqi <= 100) return '#ffeb3b';     // Yellow
+  if (aqi <= 150) return '#ff9800';     // Orange
+  if (aqi <= 200) return '#f44336';     // Red
+  if (aqi <= 300) return '#9c27b0';     // Purple
+  return '#795548';                      // Brown
 }
 
 /**
